@@ -4210,7 +4210,7 @@ v21RenderAvatar=function(){v22OldRenderAvatar();const panel=$('v21Avatar'),field
 };
 
 // Safe browser-local autosave: after gameplay mutations, periodically, and on page hide.
-const V22_STORAGE_KEY='ed-v27-ko';let v22SaveTimer=null,v22LastSaved=0,v22SaveProblem=false;
+const V22_STORAGE_KEY='ed-v28-ko';let v22SaveTimer=null,v22LastSaved=0,v22SaveProblem=false;
 function v22Persist(notify=false){
  if(!s.v22Started)return;
  if(v22SaveTimer){clearTimeout(v22SaveTimer);v22SaveTimer=null}
@@ -4234,7 +4234,7 @@ save=function(){v22Persist(true)};
 const v22PriorLoad=load;
 load=function(){
  const raw=localStorage.getItem(V22_STORAGE_KEY);
- if(raw){try{s=JSON.parse(raw);s.v22Difficulty=v22Difficulty();s.v22Started=true;s.queue??=[];s.queue.forEach(augmentPatient);v7InitState();s.v16NextArrival??=s.time+12;v21Init();render();pushV6Notice('V27 자동저장 불러오기 완료');return}catch(e){alert('V24 저장 데이터 오류: '+e.message);return}}
+ if(raw){try{s=JSON.parse(raw);s.v22Difficulty=v22Difficulty();s.v22Started=true;s.queue??=[];s.queue.forEach(augmentPatient);v7InitState();s.v16NextArrival??=s.time+12;v21Init();render();pushV6Notice('V28 자동저장 불러오기 완료');return}catch(e){alert('V24 저장 데이터 오류: '+e.message);return}}
  v22PriorLoad();s.v22Difficulty='expert';s.v22Started=true;v21Init();render();v22Persist();
 };
 for(const fnName of ['v21Buy']){ /* Purchase is persisted by render(). */ }
@@ -6125,15 +6125,8 @@ testResult=function(p,n){const name=n.startsWith('Emergency CT:')?n.slice(13):n;
  if(name==='Urinalysis')return v27Urinalysis(p);
  return v27PriorTestResult(p,n);
 };
-const v27PriorRenderResults=renderResults;
-renderResults=function(){v27PriorRenderResults();const p=cur(),root=$('resultsPanel');if(!p||!root)return;
- const test=p.tests?.find(t=>t.n==='Urinalysis'&&t.ready);
- if(!test)return;
- const rows=v27Urinalysis(p);
- const el=document.createElement('div');el.className='v27-dipstick';
- el.innerHTML='<h3>🧪 Urinalysis · Dipstick 10종 전체 결과</h3><div class="v27-urine-grid">'+rows.map(t=>`<div class="v27-urine-row ${t.flag==='이상'?'abnormal':''}"><span>${v27Text(t.label)}</span><b>${v27Text(t.text)}</b></div>`).join('')+'</div>';
- root.append(el);
-};
+// Urinalysis 10-parameter results use the existing results panel and details view.
+// Do not append a second dipstick panel below the normal results.
 
 // One consistent examination clock and its UI label.
 const v27PriorDoExam=doExam;
@@ -6481,6 +6474,378 @@ if(v27TourTest)v27TourTest.text='ECG, VBG, BGL·Ketones, Urinalysis, Bladder Sca
 const v27TourImage=V24_TOUR.find(t=>t.title.includes('혈액·미생물·영상검사'));
 if(v27TourImage)v27TourImage.text='기본 영상검사는 4개 세로 버튼으로 고릅니다. 초급은 검사 부위를 자동 선택하고, 중급/전문가는 세부 검사 선택창을 사용합니다. 응급 CT 즉시 판독 버튼이 별도로 있습니다.';
 
+
+
+/* =====================================================================
+   EMERGENCY DOCTOR SIMULATOR V28
+   Targeted clinical consistency, scoring, result presentation & UI fix.
+   Original V27 saved game is retained under its own storage key.
+   ===================================================================== */
+const V28_VERSION=28;
+const V28_DEFAULT_BGL=[4.6,5.0,5.4,5.8,6.2,6.6,7.1];
+const v28OriginalPatient=patient;
+const v28OriginalAugment=augmentPatient;
+const v28Number=(value)=>{const m=String(value??'').match(/-?\d+(?:\.\d+)?/);return m?Number(m[0]):NaN};
+const v28KnownDx=(p)=>[p?.d,p?.secondary].filter(Boolean);
+function v28MetabolicCause(p){
+ const dx=v28KnownDx(p);
+ const pmh=(p.v13PMH||[]).join(' '),meds=(p.v14Meds||[]).join(' ');
+ return dx.some(d=>['DKA','HHS','Hypoglycaemia','Hyperglycaemia','Diabetes Mellitus'].includes(d)) ||
+  /diabetes|당뇨/i.test(pmh) || /insulin|metformin|gliclazide|당뇨약|인슐린|steroid|prednisolone|스테로이드/i.test(meds) || !!p.v28StressGlucose;
+}
+function v28FindRenalLabs(p){
+ const u=(p.tests||[]).find(t=>t.n==='UEC'&&t.ready&&Array.isArray(t.r));if(!u)return null;
+ const val=(regex)=>v28Number(u.r.find(r=>regex.test(String(r.label)))?.text);
+ return {creat:val(/크레아티닌|Creatinine/i),urea:val(/요소|Urea/i),egfr:val(/eGFR/i),result:u};
+}
+function v28PreparePatient(p,fresh=false){
+ if(!p||p.v28Configured||!p.v20Ready)return p;
+ p.v28Configured=true;
+ const legacyRenal=v28FindRenalLabs(p);
+ const priorAKI=v28KnownDx(p).includes('Acute Kidney Injury');
+ // Rescue older sepsis cases whose already-returned UEC provided severe renal
+ // abnormalities but whose diagnosis generator omitted AKI.  Supply a dated
+ // simulated baseline for *this fictional case*, not eGFR-alone diagnostic logic.
+ if(p.d==='Sepsis'&&!p.secondary&&legacyRenal&&legacyRenal.creat>=160&&
+   legacyRenal.urea>7.8&&legacyRenal.egfr<=45){
+  p.secondary='Acute Kidney Injury';p.v23BaselineCreatinine=80;
+  p.v20Creatinine=legacyRenal.creat;p.v20Urea=legacyRenal.urea;
+  p.v23Creatinine=legacyRenal.creat;
+  if(!legacyRenal.result.r.some(r=>/Baseline/i.test(String(r.label)))){
+   legacyRenal.result.r.push({label:'이전 Creatinine (Baseline)',text:'80 µmol/L',flag:'참고',detail:'이 가상 환자의 최근 기록: 급성 변화 판단을 위한 비교값'});
+  }
+ }
+ // Give some newly generated sepsis cases *documented* concomitant AKI;
+ // otherwise don't assign severe unexplained renal impairment at random.
+ if(fresh&&p.d==='Sepsis'&&!p.secondary&&Math.random()<.20){
+  p.secondary='Acute Kidney Injury';
+  p.v23BaselineCreatinine=72+Math.floor(Math.random()*20);
+  p.v20Creatinine=190+Math.floor(Math.random()*100);
+  p.v20Urea=Number((11+Math.random()*8).toFixed(1));
+  p.v23Creatinine=p.v20Creatinine;
+  p.v28AKISubtype='Sepsis-associated AKI';
+ }
+ // For a saved or newly generated sepsis patient without AKI/known CKD,
+ // repair any old renal values that would otherwise contradict the answer key.
+ const knownCKD=(p.v13PMH||[]).some(x=>/CKD|chronic kidney|만성 신장|만성 신부전/i.test(String(x)));
+ if(p.d==='Sepsis'&&!v28KnownDx(p).includes('Acute Kidney Injury')&&!knownCKD){
+  p.v23Creatinine=78;delete p.v20Creatinine;delete p.v20Urea;
+  for(const t of (p.tests||[]))if(['UEC','CMP','VBG'].includes(t.n))t.r=testResult(p,t.n);
+ }
+ // Once the clinical diagnoses and background are known, unrelated random
+ // glucose 9.1 values are normalised before any tests are generated.
+ if(!v28MetabolicCause(p)&&Number(p.bgl)>7.8){
+  // Severe sepsis may explicitly generate stress hyperglycaemia in some cases,
+  // rather than having an unexplained isolated high BGL.
+  const severeSepsis=fresh&&p.d==='Sepsis'&&(p.trueCat||p.cat)<=2;
+  if(severeSepsis&&Math.random()<.12){p.v28StressGlucose=true;}
+  else{
+   p.bgl=V28_DEFAULT_BGL[Math.floor(Math.random()*V28_DEFAULT_BGL.length)];
+   p.v16BglAtArrival=p.bgl;
+  }
+ }
+ // Do not replay result popups for examinations/results completed in V27 saves.
+ const notified=p.v28ShownResults??={};
+ for(const [i,t] of (p.tests||[]).entries())if(t.ready)notified['test:'+i+':'+t.n]=true;
+ for(const n of (p.exams||[]))notified['exam:'+n]=true;
+ for(const [i,t] of (p.v21Serial||[]).entries())if(s.time>=t.readyAt)notified['serial:'+i+':'+t.n]=true;
+ return p;
+}
+patient=function(){const p=v28OriginalPatient();v28PreparePatient(p,true);return p};
+augmentPatient=function(p){const output=v28OriginalAugment(p);v28PreparePatient(output,false);return output};
+
+// Existing tests may already be ordered when migrating: keep historical
+// results, but all newly generated labs must reflect the corrected case state.
+const v28PriorTestResult=testResult;
+testResult=function(p,n){
+ const name=n.startsWith('Emergency CT:')?n.slice('Emergency CT:'.length):n;
+ if(!p.v28Configured&&p.v20Ready)v28PreparePatient(p,false);
+ let result=v28PriorTestResult(p,n);
+ if(name==='UEC'||name==='CMP'){
+  const renalDx=v28KnownDx(p).includes('Acute Kidney Injury');
+  if(!renalDx&&p.d==='Sepsis'&&Array.isArray(result)){
+   // Ignore unexplained high renal values from previous layers, while
+   // preserving AKI and other disease-specific abnormalities.
+   const cr=Number(p.v23Creatinine)||78;
+   result=result.map(row=>{
+    if(/크레아티닌|Creatinine/i.test(row.label))return calcLab(row.label,cr,45,110,'µmol/L');
+    if(/요소|Urea/i.test(row.label))return calcLab(row.label,5.2,2.5,7.8,'mmol/L',1);
+    if(/eGFR/i.test(row.label)){const e=v23Egfr(cr,p.age,p.sex);return {...row,text:`${e} mL/min/1.73m²`,flag:e<60?'낮음':'참고'};}
+    return row;
+   });
+  }
+  if(renalDx&&Array.isArray(result)){
+   const base=p.v23BaselineCreatinine;
+   if(Number.isFinite(base)&&!result.some(r=>/Baseline/i.test(String(r.label))))result.push({label:'이전 Creatinine (Baseline)',flag:'참고',text:`${base} µmol/L`,detail:'이 가상 환자의 이전 수치로, 급성 상승 여부를 판단할 때 비교'});
+  }
+ }
+ return result;
+};
+
+// Bronchodilators are reasonable but optional for compatible obstructive
+// symptoms and signs. A COPD history plus tachypnoea alone does not require it.
+const v28OldReasonableTx=v27ReasonableTx;
+v27ReasonableTx=function(p,med){
+ if(med==='Bronchodilator'){
+  const dx=v28KnownDx(p);
+  if(dx.some(d=>['Asthma','COPD Exacerbation'].includes(d)))return true;
+  const hasCOPD=(p.v13PMH||[]).some(x=>/COPD|만성폐쇄성/i.test(String(x)));
+  const meds=(p.v14Meds||[]).some(x=>/inhaler|흡입|salbutamol|tiotropium/i.test(String(x)));
+  const examTextJoined=(p.exams||[]).filter(e=>/폐음|청진/.test(e)).map(e=>String(examResult(p,e))).join(' ');
+  const wheeze=/wheez|천명|bronchospasm|기관지.?경련|기류.?폐쇄/i.test(examTextJoined)||!!p.v10Symptoms?.wheeze;
+  const dyspnoea=!!(p.v10Symptoms?.dyspnoea||p.v10Symptoms?.sob||p.v10Symptoms?.breathlessness);
+  if(wheeze&&(hasCOPD||meds||p.rr>=24))return true;
+  if(hasCOPD&&meds&&(p.rr>=30||(p.rr>=24&&dyspnoea)||p.spo2<=94))return true;
+ }
+ return v28OldReasonableTx(p,med);
+};
+
+// Prevent full 50/50 diagnosis credit for inventing a secondary diagnosis.
+const v28OldComputeEvaluation=v27ComputeEvaluation;
+v27ComputeEvaluation=function(p,mode,ref,wrongReferrals,main,second){
+ const r=v28OldComputeEvaluation(p,mode,ref,wrongReferrals,main,second);
+ const wrongExtra=!p.secondary&&!!second;
+ if(wrongExtra&&r.mainCorrect){r.dx=Math.max(0,r.dx-15);r.wrongSecondaryPenalty=15;}
+ else r.wrongSecondaryPenalty=0;
+ r.raw=v27Clamp(r.dx+r.direction+r.treatment+r.efficiency+r.speed+r.handoff-r.hints,0,130);
+ r.percent=Number((r.raw/130*100).toFixed(1));r.grade=v27Grade(r.percent);
+ r.xp=Math.max(0,Math.round((r.raw+r.complex+r.resus)*r.mult)-r.question);
+ return r;
+};
+
+function v28FlagAbnormal(flag){
+ const f=String(flag??'').trim();if(!f)return false;
+ if(/비정상|위험|상승|감소|높음|낮음|양성|positive|abnormal|critical|high|low|이상/i.test(f))return true;
+ return !/^(정상|참고|normal|negative|음성|reference|not detected)$/i.test(f);
+}
+function v28TextAbnormal(p,name,text){
+ const v=String(text??'').trim(),low=v.toLowerCase();
+ if(name==='Bladder Scan'){
+  const volume=v28Number(v.match(/Bladder volume\s*([\d.]+)/i)?.[1]);
+  return Number.isFinite(volume)?volume>=500:/요폐|잔뇨.*증가/i.test(v)&&!/않|없음/.test(v);
+ }
+ if(name==='신경학적 바이탈'||name==='신경학적 관찰 (Neuro Obs)'){
+  const gcs=v.match(/GCS\s*(\d+)/i);
+  return gcs?Number(gcs[1])<15:/비정상|이상 소견:|동공 부동|anisocoria/i.test(v);
+ }
+ if(name==='Repeat vital signs')return p.sbp<90||p.spo2<92||p.rr>=30||p.gcs<15;
+ // Negative or inconclusive cultures, and reference-only preliminary reports,
+ // should not appear as positive abnormal findings.
+ if(/균 증식 보고 없음|배양 진행 중|최종 동정 불가|아직 균 증식|specific pathogen not isolated/i.test(low)&&!/양성 신호|positive|pyuria|세균 관찰/i.test(low))return false;
+ if(/(특이 소견 없음|이상 소견 없음|현저한 잔뇨 증가가 관찰되지 않습니다|normal neurological observations|정상 \(normal|no acute abnormality|not detected|모두 음성|급성 출혈 없음|새로운 명백한.*없음)/i.test(low) &&
+   !/양성 신호|혈전 관찰|고혈압성|국소 폐침윤 관찰|급성.*확인|명백한 허혈성 변화/i.test(low))return false;
+ if(/^정상|^특이|^음성|^no |^negative|^예비 보고: 현재까지 균 증식 보고 없음/i.test(v))return false;
+ if(/이상 소견:|양성 \(detected\)|양성 신호|충만 결손|출혈 확인|폐침윤 관찰|consolidation|혈전 관찰|혈종|ST분절 상승|ST depression|허혈성|기흉 확인|골절선 확인|폐 과팽창|횡격막 편평|세균 관찰|pyuria|bacteriuria|심한 산증|국소 방어|반발통|friction rub|동공 부동|부정맥|불규칙한 RR|심방세동|빈맥|고칼륨/i.test(v))return true;
+ return !/(정상|없음|음성|미분리|유의한 상승 없음|임상적으로 설명 가능|unremarkable|no growth|not detected|negative|normal|결과 대기|배양 지속 중)/i.test(v);
+}
+function v28ResultCategory(n){
+ if(V16_MICRO.includes(n)||n==='Fecal MCS')return 'micro';
+ if(quickV4.includes(n)||V27_RAPID.includes(n))return 'quick';
+ if(imagingTests.includes(n)||n.startsWith('Emergency CT:')||n==='Echocardiography')return 'image';
+ return 'blood';
+}
+function v28ResultEntries(p,n,value,cat){
+ const title=n==='physical'?cat:labelTest(n),category=n==='physical'?'physical':v28ResultCategory(n);
+ const entries=[];
+ if(Array.isArray(value)){
+  const abnormal=value.filter(x=>v28FlagAbnormal(x.flag));
+  const normal=value.filter(x=>!v28FlagAbnormal(x.flag));
+  if(abnormal.length)entries.push({abnormal:true,cat:category,title,html:abnormal.map(x=>`<div class="ab-row"><b>${v10Esc(x.label)}</b><span class="ab-flag">${v10Esc(x.flag||'이상')}</span><span>${v10Esc(x.text)}</span></div>`).join('')});
+  if(normal.length)entries.push({abnormal:false,cat:category,title,html:normal.map(x=>`<span class="normal-mini">${v10Esc(x.label)}: ${v10Esc(x.text)}</span>`).join('')});
+ }else{
+  entries.push({abnormal:v28TextAbnormal(p,n==='physical'?cat:n,value),cat:category,title,html:`<div>${v10Esc(value)}</div>`});
+ }
+ return entries;
+}
+const v28PreviousResults=renderResults;
+renderResults=function(){
+ v28PreviousResults();const p=cur(),root=$('resultsPanel');if(!p||!root)return;
+ // Preserve the versioned expert/beginner clues and serial-investigation history,
+ // but replace the legacy mixed/duplicated normal and abnormal groups entirely.
+ const clue=root.querySelector('.v22-interpret')?.outerHTML||'';
+ const trends=root.querySelector('.v26-trends')?.outerHTML||root.querySelector('.v21-series')?.outerHTML||'';
+ const list=[];
+ for(const ex of (p.exams||[]))list.push(...v28ResultEntries(p,'physical',examResult(p,ex),ex));
+ for(const t of (p.tests||[]))if(t.ready)list.push(...v28ResultEntries(p,t.n,t.r));
+ for(const [i,t] of (p.v21Serial||[]).entries()){
+  if(s.time<t.readyAt)continue;
+  if(!t.r)t.r=v21GetSerialResult(p,t.n,t.readyAt);
+  list.push(...v28ResultEntries(p,t.n,t.r));
+ }
+ const cats={physical:'🩺 신체검사 / Neuro Obs',quick:'⚡ 신속검사',blood:'🩸 혈액검사',micro:'🦠 미생물검사',image:'🩻 영상검사'};
+ const grouped=(ary)=>Object.keys(cats).map(cat=>{
+  const items=ary.filter(x=>x.cat===cat);
+  return items.length?`<div class="compact-result-group"><div class="result-type">${cats[cat]}</div>${items.map(x=>`<div class="compact-item"><strong>${v10Esc(x.title)}</strong>${x.html}</div>`).join('')}</div>`:'';
+ }).join('');
+ const abnormalities=list.filter(x=>x.abnormal),normal=list.filter(x=>!x.abnormal);
+ const pending=(p.tests||[]).filter(t=>!t.ready),serialPending=(p.v21Serial||[]).filter(t=>s.time<t.readyAt);
+ root.innerHTML=clue+`<div class="flag-summary">${abnormalities.length?'🚩 이상 소견 '+abnormalities.length+'건':'✅ 확인된 이상 소견 없음'}</div>`+
+   (grouped(abnormalities)||'<p class="muted small">현재 확인된 이상 소견이 없습니다.</p>')+
+   `<details class="normal-details" ${expandedResults?'open':''}><summary>정상·참고 결과 자세히 보기 (${normal.length}건)</summary>${grouped(normal)||'<p class="muted small">정상·참고 결과가 없습니다.</p>'}</details>`+
+   (pending.length||serialPending.length?`<div class="v6-pending"><b>⏳ 검사 진행 중 (${pending.length+serialPending.length}건)</b>${[...pending,...serialPending].map(t=>`<div>${v10Esc(labelTest(t.n))} · ${Math.max(0,Math.ceil(t.readyAt-s.time))}분 남음</div>`).join('')}</div>`:'')+
+   (trends?`<details class="v28-trends"><summary>📈 연속 검사 변화 자세히 보기</summary>${trends}</details>`:'');
+ const details=root.querySelector('.normal-details');
+ if(details)details.addEventListener('toggle',()=>{expandedResults=details.open;details.querySelector('summary').textContent=(expandedResults?'정상·참고 결과 접기':'정상·참고 결과 자세히 보기')+` (${normal.length}건)`;});
+ $('resultCount').textContent=`결과 ${(p.tests||[]).filter(t=>t.ready).length+ (p.v21Serial||[]).filter(t=>s.time>=t.readyAt).length}건 · 대기 ${pending.length+serialPending.length}건 · 진찰 ${(p.exams||[]).length}건`;
+};
+
+// Single popup presentation for EVERY completed exam, POCT, blood,
+// microbiology, imaging and serial result (including normal findings).
+// Prior per-test popups are suppressed so they cannot double-display.
+v18ShowPOCT=function(){};
+v19UrinalysisPopup=function(){};
+const v28PopupQueue=[];
+function v28SeenKey(type,index,name){return `${type}:${index}:${name}`;}
+function v28CaptureReady(){
+ const p=cur();if(!p||!p.v28Configured)return;
+ const shown=p.v28ShownResults??={};
+ const push=(type,index,n,data)=>{const key=v28SeenKey(type,index,n);if(shown[key])return;shown[key]=true;v28PopupQueue.push({patientId:p.id,key,n,type,data});};
+ (p.exams||[]).forEach((n,i)=>push('exam',n,n,examResult(p,n)));
+ (p.tests||[]).forEach((t,i)=>{if(t.ready)push('test',i,t.n,t.r)});
+ (p.v21Serial||[]).forEach((t,i)=>{if(s.time<t.readyAt)return;if(!t.r)t.r=v21GetSerialResult(p,t.n,t.readyAt);push('serial',i,t.n,t.r)});
+}
+function v28TestPopupMarkup(p,item){
+ const title=item.type==='exam'?item.n:labelTest(item.n),value=item.data;
+ const values=Array.isArray(value)?value:[{label:'검사 결과',text:String(value??''),flag:v28TextAbnormal(p,item.n,value)?'이상':'정상'}];
+ const abnormal=values.filter(row=>v28FlagAbnormal(row.flag));
+ const rows=values.map(row=>`<tr class="${v28FlagAbnormal(row.flag)?'v18-abnormal':''}"><td>${v10Esc(row.label)}</td><td>${v10Esc(row.text)}${row.detail?`<small style="display:block;color:#9bbbd1">${v10Esc(row.detail)}</small>`:''}</td><td>${v10Esc(row.flag||'정상')}</td></tr>`).join('');
+ let graph='';if(item.n==='ECG'){const [type,desc]=v18ECGType(p);graph=`<p class="muted small">${v10Esc(desc)}</p>${v18ECGGraph(type)}`}
+ return `<h2>📋 ${v10Esc(title)} · 결과 확인</h2><p class="muted small">${v10Esc(p.name||'환자')} · ${item.type==='exam'?'신체검사':item.type==='serial'?'연속검사 결과':'검사 결과'} · ${abnormal.length?'⚠️ 이상 소견 '+abnormal.length+'개':'✅ 정상·참고 결과'}</p>`+
+  graph+`<div class="v18-lab-wrap"><table class="v18-lab"><thead><tr><th>항목</th><th>결과</th><th>판정</th></tr></thead><tbody>${rows}</tbody></table></div>`+
+  '<p class="muted small">확인한 결과는 아래 검사 결과 패널의 정상·참고 또는 이상 소견에 자동 분류됩니다.</p><button class="primary" onclick="hide()">결과 확인 · 다음</button>';
+}
+function v28DrainPopups(){
+ const p=cur(),modal=$('modal');
+ if(!p||!modal||modal.classList.contains('show')||!s.v22Started)return;
+ const i=v28PopupQueue.findIndex(x=>x.patientId===p.id);
+ if(i<0)return;
+ const item=v28PopupQueue.splice(i,1)[0];
+ show(v28TestPopupMarkup(p,item));
+}
+// Legacy V7 automatically popped a second alert whenever a modal closed.
+// Keep its alert log available on explicit bell-button clicks only.
+const v28ManualAlertPopup=v7AlertPopup;
+v7AlertPopup=function(){
+ const target=window.event?.target;
+ const manual=target?.closest?.('button[onclick*="v7AlertPopup"]');
+ if(manual)return v28ManualAlertPopup();
+};
+const v28PriorHide=hide;
+hide=function(){v28PriorHide();v28DrainPopups()};
+const v28PriorRender=render;
+render=function(){const out=v28PriorRender();v28CaptureReady();v28DrainPopups();return out};
+
+// Correct the stacked blood/microbiology card height.  Each column shares
+// a single grid track; the stacked pair stretches to the neighbouring height.
+const v28LayoutStyle=document.createElement('style');
+v28LayoutStyle.textContent=`
+.four-col{align-items:stretch!important}
+.four-col > .v17-test-stack{min-height:100%;height:100%;display:flex;flex-direction:column;align-self:stretch}
+.four-col > .v17-test-stack > .test-col{box-sizing:border-box;min-width:0;width:100%}
+.four-col > .v17-test-stack > .v16-micro{flex:1 1 auto;min-height:0!important}
+.four-col > .v17-test-stack > .test-col:not(.v16-micro){flex:0 0 auto}
+.four-col > .test-col{height:100%}
+.v28-trends{margin-top:9px;padding:8px 10px;background:#0e283b;border:1px solid #385a75;border-radius:8px}
+.v28-trends summary{cursor:pointer;font-weight:700;color:#bbe2ff}
+.v28-trends .v26-trends{margin:8px 0 0;border:0;padding:4px;background:transparent}
+.normal-details .compact-result-group{background:#0d263b}
+@media(max-width:700px){.four-col > .v17-test-stack{height:auto;min-height:0}.four-col > .test-col{height:auto}}
+`;
+document.head.append(v28LayoutStyle);
+
+// Reconstruct the reputation ledger from the original version's formula,
+// keeping unrelated career bonuses intact. Optional justified therapies no
+// longer count as an inappropriate prescription in either feedback or rep.
+function v28RepLedger(p,r,mode,ref,acceptReasonable){
+ // V21 replaced the older reputation formula and floors reputation at zero.
+ // Reconstruct *that* authoritative calculation, not the obsolete V5 rule.
+ const actual=v28KnownDx(p),chosen=r.selection;
+ const matched=actual.filter(d=>chosen.includes(d)).length;
+ const complete=matched===actual.length&&chosen.length===actual.length;
+ const required=v10RequiredTx(p),performed=new Set(p.treatments||[]);
+ const done=required.filter(t=>performed.has(t));
+ const wrong=[...new Set((p.treatments||[]).filter(t=>!required.includes(t)&&!t.startsWith('Resus:')&&(!acceptReasonable||!v27ReasonableTx(p,t))))];
+ const ratio=required.length?done.length/required.length:1;
+ const ok=v27ReferralAllowed(p,mode,ref);
+ const entries=[];
+ const add=(label,value,showZero=false)=>{if(value||showZero)entries.push({label,value})};
+ if(matched===0)add('진단 불일치',-5);
+ else if(!complete)add('주진단 부분 일치·추가진단 오답 (평판 자체 감점 없음)',0,true);
+ else{
+  const tier=ok&&!wrong.length&&ratio===1?15:ok&&!wrong.length&&ratio>=.75?10:3;
+  add('정확한 진단·진료',tier);
+  if(actual.length===2)add('복합진단 모두 정답',5);
+  if(ok&&!wrong.length&&ratio>=.75&&p.trueCat<=2)add('중증 환자 성공 보너스',p.trueCat===1?4:2);
+ }
+ if(ok&&mode==='refer')add('적절한 전문과 의뢰',3);
+ if(!ok)add('부적절한 진료 방향',-7);
+ if(wrong.length)add(`불필요한 처치 ${wrong.length}개`,-wrong.length);
+ if(p.resusSuccess)add('Resus 성공',5);
+ return {entries,total:entries.reduce((sum,x)=>sum+x.value,0),wrong};
+}
+const v28OldFinish=finish;
+finish=function(mode){
+ const p=cur();if(!p)return;
+ const ref=$('refer')?.value||'',main=$('diag')?.value||'',second=$('diag2')?.value||'';
+ const beforeHandled=s.handled,beforeRep=s.rep||0;
+ v28OldFinish(mode);
+ if(s.handled===beforeHandled)return;
+ const r=v27ComputeEvaluation(p,mode,ref,Number(p.v27WrongReferrals||0),main,second);
+ const legacy=v28RepLedger(p,r,mode,ref,false),corrected=v28RepLedger(p,r,mode,ref,true);
+ const originalDelta=(s.rep||0)-beforeRep;
+ const legacyApplied=Math.max(0,beforeRep+legacy.total)-beforeRep;
+ const correctedApplied=Math.max(0,beforeRep+corrected.total)-beforeRep;
+ const external=originalDelta-legacyApplied;
+ const adjustment=correctedApplied-legacyApplied;
+ s.rep+=adjustment;s.v28Version=V28_VERSION;
+ const total=(s.rep||0)-beforeRep;
+ const display=(x)=>`${x>=0?'+':''}${x}`;
+ const entries=[...corrected.entries];
+ if(beforeRep+corrected.total<0)entries.push({label:'평판 하한 0점 적용',value:-(beforeRep+corrected.total)});
+ if(external)entries.push({label:'기타 커리어·이벤트 보상/감점',value:external});
+ const box=$('modalbox');
+ if(box){
+  const msg=box.querySelector('.v27-eval-clinical .v27-feedback-list.bad');
+  if(msg&&r.wrongSecondaryPenalty)msg.insertAdjacentHTML('beforeend',`<li>실제로 없는 추가진단을 선택했습니다. 진단 점수 −${r.wrongSecondaryPenalty}점.</li>`);
+  const xp=box.querySelector('.v27-xp');
+  if(xp){
+   const rp=[...xp.querySelectorAll('.v27-scoreline')].find(x=>x.textContent.includes('평판 변화'));
+   if(rp){const value=rp.querySelector('b');if(value)value.textContent=display(total)}
+   const section=document.createElement('div');section.className='v28-reputation-detail';
+   section.innerHTML=`<h3>⭐ 평판 점수 상세 계산</h3>${entries.map(e=>`<div class="v27-scoreline"><span>${v10Esc(e.label)}</span><b style="color:${e.value>=0?'#9aefcb':'#ffb4ab'}">${display(e.value)}</b></div>`).join('')}<div class="v27-xp-total"><span>평판 총변화</span><b>${display(total)}</b></div>`;
+   xp.append(section);
+  }
+ }
+ render();v22Persist();
+};
+
+// V28 branding and migration from V27 localStorage.
+const v28OldHeader=renderHeader;
+renderHeader=function(){v28OldHeader();const brand=document.querySelector('header .brand');if(brand)brand.innerHTML='Emergency Doctor Simulator <span class="v27-brand-version">v28</span>';document.title='Emergency Doctor Simulator · v28'};
+function v28ImportV27(){
+ const raw=localStorage.getItem('ed-v27-ko');if(!raw)return;
+ if(!confirm('V27 진행 상황을 V28로 복사할까요? V27 원본 저장은 유지됩니다.'))return;
+ try{
+  s=JSON.parse(raw);s.queue??=[];s.v22Started=true;s.v28Version=V28_VERSION;
+  for(const p of s.queue)augmentPatient(p);
+  v7InitState();v21Init();$('v22Setup')?.remove();s.speed=s.ended?0:1;render();v22Persist();
+  pushV6Notice('V27 진행 데이터를 V28로 복사했습니다. V27 원본은 유지됩니다.');
+ }catch(e){alert('V27 저장 가져오기 실패: '+e.message)}
+}
+const v28OldBoot=v22Boot;
+v22Boot=function(){
+ v28OldBoot();const setup=$('v22Setup');if(!setup)return;
+ const version=setup.querySelector('#v27VersionTag');
+ if(version)version.textContent='v28 · 전 검사 결과 팝업 · 정상/이상 자동 분류 · 진단·평판 판정 개선';
+ const actions=setup.querySelector('.v22-actions');
+ if(actions&&localStorage.getItem('ed-v27-ko')&&!setup.querySelector('#v28ImportV27'))actions.insertAdjacentHTML('afterbegin','<button id="v28ImportV27" onclick="v28ImportV27()">V27 진행 상황 가져오기</button>');
+};
+const v28OldLoad=load;
+load=function(){v28OldLoad();if(s.v22Started){s.v28Version=V28_VERSION;for(const p of s.queue||[])augmentPatient(p);render();v22Persist()}};
+const v28OldNew=v22StartNew;
+v22StartNew=function(){v28OldNew();if(s.v22Started){s.v28Version=V28_VERSION;v22Persist()}};
+const v28OldResume=v22Resume;
+v22Resume=function(){v28OldResume();if(s.v22Started){s.v28Version=V28_VERSION;for(const p of s.queue||[])augmentPatient(p);render()}};
 
 // First launch waits for explicit character creation; the simulation never runs behind setup.
 s.speed=0;s.v22Started=false;v21Init();v22Boot();
