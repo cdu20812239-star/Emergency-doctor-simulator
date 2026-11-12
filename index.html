@@ -4210,7 +4210,7 @@ v21RenderAvatar=function(){v22OldRenderAvatar();const panel=$('v21Avatar'),field
 };
 
 // Safe browser-local autosave: after gameplay mutations, periodically, and on page hide.
-const V22_STORAGE_KEY='ed-v28-ko';let v22SaveTimer=null,v22LastSaved=0,v22SaveProblem=false;
+const V22_STORAGE_KEY='ed-v29-ko';let v22SaveTimer=null,v22LastSaved=0,v22SaveProblem=false;
 function v22Persist(notify=false){
  if(!s.v22Started)return;
  if(v22SaveTimer){clearTimeout(v22SaveTimer);v22SaveTimer=null}
@@ -4279,7 +4279,7 @@ function v22ResetState(){
  };
  v7InitState();v16InitShiftQueue();s.v22Started=true;s.speed=1;s.cash=0;v21Init();
 }
-function v22StartNew(){if(localStorage.getItem(V22_STORAGE_KEY)&&!confirm('기존 V27 자동저장 진행 상황을 덮어쓰고 새 게임을 시작할까요?'))return;
+function v22StartNew(){if(localStorage.getItem(V22_STORAGE_KEY)&&!confirm('기존 v29 자동저장 진행 상황을 덮어쓰고 새 게임을 시작할까요?'))return;
  v22ResetState();$('v22Setup')?.remove();render();v22Persist();pushV6Notice(`${V22_MODES[v22Difficulty()].title} 난이도 · 제1주차 근무 시작`);
 }
 function v22Resume(){const raw=localStorage.getItem(V22_STORAGE_KEY);if(!raw)return;
@@ -6903,6 +6903,507 @@ v22Boot=function(){
  const el=$('v27VersionTag');
  if(el)el.textContent='v28.1 · 검사 팝업 및 판정 개선 · 자발적 상급자 인계는 진료 포기 (보상 없음)';
 };
+
+
+/* ================================================================
+   V28.2 — Single source of truth for pain NRS / interview description.
+   Also expose optional NGT placement for suitable bowel obstruction.
+   ================================================================ */
+const V282_PAIN_DESCRIPTORS={
+ 'Pericarditis':['가슴 중앙','가슴 중앙','어깨나 등','찌르고 날카로운','지속적','갑자기 또는 서서히 시작','누우면 악화되고 상체를 앞으로 숙이면 나아짐'],
+ 'Diverticulitis':['아랫배','왼쪽 아랫배','방사통 없음','묵직하고 욱신거리는','지속적','최근 며칠 사이 시작','움직이거나 해당 부위를 누르면 악화'],
+ 'Constipation':['아랫배','아랫배','방사통 없음','더부룩하고 묵직한','간헐적','며칠에 걸쳐 서서히 시작','배변하지 못할 때 더 불편'],
+ 'UTI':['하복부','아랫배 및 요도 부위','방사통 없음','따갑고 화끈거리는','배뇨할 때 악화','최근 시작','소변볼 때 더 아픔'],
+ 'Cellulitis':['붉고 부은 피부','염증 부위','방사통 없음','화끈거리고 쑤시는','지속적','서서히 시작','만지거나 움직이면 악화'],
+ 'DVT':['종아리','한쪽 종아리','방사통 없음','당기고 묵직한','지속적','서서히 시작','걷거나 누를 때 더 불편'],
+ 'Sepsis':['몸 전체','근육과 관절','방사통 없음','몸살처럼 쑤시는','지속적','최근 시작','열이나 오한과 함께 심해짐'],
+ 'Pneumonia':['가슴 옆쪽','한쪽 가슴','방사통 없음','찌르는 듯한','기침할 때 더 심한','최근 시작','깊게 숨쉬거나 기침하면 악화'],
+ 'Cauda Equina Syndrome':['허리','허리와 엉덩이','한쪽 또는 양쪽 다리','찌릿하고 쏘는','지속적','최근 심해짐','움직이거나 자세를 바꾸면 악화'],
+ 'Intracranial Haemorrhage':['머리','머리 전체','방사통 없음','터질 듯 심한','지속적','갑자기 시작','움직임과 자극에 불편함'],
+ 'Meningitis':['머리','머리 전체','방사통 없음','심하게 욱신거리는','지속적','최근 시작','빛을 보거나 목을 움직이면 악화'],
+ 'URTI':['목','목과 인후','방사통 없음','따갑고 쓰라린','삼킬 때 악화','최근 시작','음식이나 침을 삼킬 때 심해짐'],
+ 'Seizure':['몸','근육','방사통 없음','뻐근하고 쑤시는','발작 이후','발작 이후 시작','움직일 때 더 불편함'],
+ 'Atrial Fibrillation':['가슴','가슴 중앙','방사통 없음','답답하고 뻐근한','간헐적','두근거림과 함께 시작','심장이 빠르게 뛸 때 심해짐'],
+ 'SVT':['가슴','가슴 중앙','방사통 없음','답답하고 뻐근한','발작적으로 나타남','두근거림과 함께 시작','맥박이 빠를 때 심해짐'],
+ 'Hypotension':['몸 전체','근육','방사통 없음','뻐근하고 불편한','간헐적','최근 시작','정확한 악화 요인은 모르겠음'],
+ 'Hypertension':['머리','뒤통수','방사통 없음','묵직하게 지끈거리는','간헐적','최근 시작','특정 요인을 잘 모르겠음'],
+ 'Gastroenteritis':['복부','복부 전체','방사통 없음','배가 꼬이는 듯한','간헐적','최근 시작','복통과 함께 설사·구토가 나타남'],
+ 'Hypoglycaemia':['머리','머리','방사통 없음','멍하고 지끈거리는','간헐적','최근 시작','식사를 못 하면 더 불편함'],
+ 'Hyperglycaemia':['몸 전체','몸과 근육','방사통 없음','뻐근하고 쑤시는','간헐적','최근 시작','특정 악화 요인은 잘 모르겠음'],
+ 'Acute Kidney Injury':['몸 전체','몸과 근육','방사통 없음','뻐근하고 쑤시는','간헐적','최근 시작','특별한 악화 요인은 잘 모르겠음']
+};
+function v282PainScore(p){const value=Number(p?.pain);return Number.isFinite(value)?Math.max(0,Math.min(10,Math.round(value))):0}
+function v282PainProfile(p){
+ if(Array.isArray(p?.v20Pain)&&p.v20Pain.length>=7)return p.v20Pain;
+ const original=V20_PAIN[p?.d]||(p?.secondary?V20_PAIN[p.secondary]:null);
+ if(original)return original;
+ const a=V282_PAIN_DESCRIPTORS[p?.d]||V282_PAIN_DESCRIPTORS[p?.secondary];
+ if(a)return a;
+ const chief=String(diseases.find(d=>d[0]===p?.d)?.[2]||'').toLowerCase();
+ if(/chest|palpitation|dyspnoea|breath|wheeze/.test(chief))return ['가슴','가슴','방사통 없음','답답하고 묵직한','간헐적','최근 시작','숨을 쉬거나 움직일 때 불편함'];
+ if(/flank|urinar|kidney/.test(chief))return ['옆구리','옆구리','방사통 없음','쑤시고 묵직한','간헐적','최근 시작','움직일 때 더 불편함'];
+ if(/abdom|pelvic|bowel|vomit|diarr|distension/.test(chief))return ['복부','복부','방사통 없음','묵직하고 쥐어짜는','간헐적','최근 시작','복부가 팽만할 때 더 불편함'];
+ if(/head|neuro|weak|seizure/.test(chief))return ['머리','머리','방사통 없음','욱신거리거나 묵직한','간헐적','최근 시작','특정 악화 요인은 모르겠음'];
+ if(/limb|leg|wound|rash|swollen|fracture/.test(chief))return ['불편한 부위','해당 부위','방사통 없음','쑤시고 욱신거리는','간헐적','최근 시작','만지거나 움직이면 악화'];
+ return ['몸','몸 전체','방사통 없음','뻐근하고 쑤시는','간헐적','최근 시작','특별한 악화 요인은 잘 모르겠음'];
+}
+function v282PainAnswer(p){
+ const score=v282PainScore(p),arrival=Math.max(0,Math.min(10,Number(p.v10PainAtArrival)||0));
+ if(score===0){
+  if(arrival>0&&(p.treatments||[]).some(t=>['Analgesia','NSAID therapy','IDC Insertion'].includes(t)))
+   return `현재 통증은 0/10점이에요. 처음에는 ${arrival}/10점 정도 아팠지만 처치 이후 통증이 가라앉았어요.`;
+  return '현재 통증은 0/10점이고 특별히 아픈 곳은 없어요.';
+ }
+ const [start,now,radiation,quality,pattern,onset,factor]=v282PainProfile(p);
+ const spread=/^(방사통 없음|특별한 방사통 없음)$/.test(radiation)?'다른 곳으로 퍼지지는 않아요.':`통증이 ${radiation} 쪽으로 퍼져요.`;
+ return `지금 통증은 ${score}/10점 정도예요. 아픈 곳은 ${now}이고 처음에는 ${start}에서 시작됐어요. ${quality} 느낌이고 ${pattern} 양상이에요. ${spread} 통증 시작·경과: ${onset}. 악화·완화 요인: ${factor}.`;
+}
+function v282RepairPain(p){
+ if(!p)return p;
+ // Do not regenerate the patient's pain level. The monitor (p.pain) is authoritative.
+ if(!Array.isArray(p.v20Pain)&&(v282PainScore(p)>0||Number(p.v10PainAtArrival)>0))p.v20Pain=v282PainProfile(p);
+ // Repair already-recorded contradictory "no pain" statements in existing saves.
+ for(const h of p.history||[]){
+  if(/통증 사정|통증에 대해|통증이 있다면|Pain Assessment/i.test(String(h.q||''))&&
+     /특별히 아픈 곳이 없|아픈 곳이 없|통증은 없|통증이 없/.test(String(h.a||''))&&v282PainScore(p)>0)
+   h.a=v282PainAnswer(p);
+ }
+ return p;
+}
+const v282PriorPatient=patient;
+patient=function(){return v282RepairPain(v282PriorPatient())};
+const v282PriorAugment=augmentPatient;
+augmentPatient=function(p){return v282RepairPain(v282PriorAugment(p))};
+const v282PriorAnswer=answer;
+answer=function(p,key){if(key==='pain')return v282PainAnswer(v282RepairPain(p));return v282PriorAnswer(p,key)};
+const v282PriorClinical=renderClinical;
+renderClinical=function(){v282RepairPain(cur());return v282PriorClinical()};
+
+// NGT is a selectable optional procedure, not a blanket mandatory treatment.
+// It is a clinically reasonable option for bowel obstruction with vomiting /
+// significant distension; unrelated cases remain subject to normal penalties.
+const V282_NGT='NGT Placement';
+if(!therapies.includes(V282_NGT))therapies.push(V282_NGT);
+tx[V282_NGT]='비위관 삽입 · 위장관 감압 (NGT Placement)';
+V10_PROCEDURES.add(V282_NGT);
+if(!V20_PROC_ORDER.includes(V282_NGT))V20_PROC_ORDER.splice(Math.max(0,V20_PROC_ORDER.indexOf('IDC Insertion')),0,V282_NGT);
+const v282PriorReasonableTx=v27ReasonableTx;
+v27ReasonableTx=function(p,med){
+ if(med===V282_NGT)return [p.d,p.secondary].includes('Bowel Obstruction')&&!!p.v10Symptoms?.vomiting;
+ return v282PriorReasonableTx(p,med);
+};
+const v282PriorMedMenu=v10OpenMedication;
+v10OpenMedication=function(kind){
+ v282PriorMedMenu(kind);
+ if(kind==='procedure'){
+  const option=[...document.querySelectorAll('#v10OptionGrid label')].find(el=>el.querySelector('input')?.value===V282_NGT);
+  const small=option?.querySelector('small');
+  if(small)small.textContent='Nasogastric tube · 장폐색에서 구토·복부팽만 시 고려 (선택 처치)';
+ }
+};
+const v282PriorHeader=renderHeader;
+renderHeader=function(){v282PriorHeader();const ver=document.querySelector('header .brand .v27-brand-version');if(ver)ver.textContent='v28.2';document.title='Emergency Doctor Simulator · v28.2'};
+const v282PriorBoot=v22Boot;
+v22Boot=function(){v282PriorBoot();const label=$('v27VersionTag');if(label)label.textContent='v28.2 · 통증 문진·바이탈 일치 · 통증 양상 설명 · NGT 선택 처치 추가'};
+
+
+/* =======================================================================
+  V29 KO — linked disposition, urinary retention, physiology, CAT and repeats.
+  The existing V28.2 mechanics, presentation and Korean UI are retained.
+  Clinical rules are explicitly simplified for fictional educational play.
+  Save namespace: ed-v29-ko (V28 save is never overwritten).
+  ======================================================================= */
+const V29_VERSION='29.0';
+const V29_URINARY='Acute Urinary Retention';
+const V29_GP_GENERAL=new Set(['Hypoglycaemia','Parkinson Disease','Migraine','Hypertension','Constipation',V29_URINARY]);
+const V29_GP_SPECIAL=new Set(['URTI','Gastroenteritis','UTI','Cellulitis','Fracture','Hyperglycaemia','Renal Colic','Seizure','Syncope','Asthma','COPD Exacerbation','Anaphylaxis']);
+const v29Has=(p,d)=>[p?.d,p?.secondary].includes(d);
+const v29Clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
+const v29Done=(p,txName)=>(p?.treatments||[]).includes(txName);
+const v29TestDone=(p,name)=>(p?.tests||[]).some(t=>(t.n===name||t.n==='Emergency CT:'+name)&&t.ready&&Number(t.readyAt??0)<=s.time)||(p?.v21Serial||[]).some(t=>t.n===name&&t.readyAt<=s.time);
+const v29CrisisActive=p=>!!p?.crisis&&!p?.resusSuccess;
+const v29Dx=(p)=>[p?.d,p?.secondary].filter(Boolean);
+
+// One new diagnosis: existing bedside bladder scan and IDC, existing Urology.
+if(!diseases.some(d=>d[0]===V29_URINARY))diseases.push([
+ V29_URINARY,'Renal','Unable to pass urine / suprapubic pain','Urology / GP',
+ 'Bladder Scan / PVR; UEC and Urinalysis if indicated',
+ 'IDC insertion and bladder decompression; reassess pain and condition',
+ 'Unable to void, suprapubic fullness, lower abdominal discomfort'
+]);
+names[V29_URINARY]='급성 요폐';
+complaints['Unable to pass urine / suprapubic pain']='소변이 나오지 않음 · 하복부 팽만통';
+referKeys[V29_URINARY]=['Urology'];
+appropriateTx[V29_URINARY]=['IDC Insertion'];
+// Keep original treatment appropriateness and scoring aligned with new v29 requirements.
+for(const [d,extra] of [['Bowel Obstruction',['NGT Placement']],['Gastroenteritis',['Antibiotics']],['Parkinson Disease',['Levodopa/Carbidopa']]])
+ appropriateTx[d]=[...new Set([...(appropriateTx[d]||[]),...extra])];
+V27_ESSENTIAL_TESTS[V29_URINARY]=[['Bladder Scan']];
+V27_FIRST_ACTION[V29_URINARY]=['test:Bladder Scan','tx:IDC Insertion'];
+V14_HINT_TESTS[V29_URINARY]=['Bladder Scan','UEC'];
+V14_HINT_EXAMS[V29_URINARY]='복부 진찰';
+seniorClues[V29_URINARY]='배뇨 불가능·치골상부 팽만과 Bladder Scan 용적을 확인하세요. IDC 후 배액과 통증 변화를 재평가하세요.';
+V282_PAIN_DESCRIPTORS[V29_URINARY]=['치골상부','하복부 중앙','방사통 없음','팽팽하게 눌리고 묵직한','소변이 차면서 지속적으로 심해지는','수 시간 전부터 배뇨 불가','배뇨를 못하면 악화, 감압 후 호전'];
+V22_DIAG_IMAGES[V29_URINARY]={uss:'USS Abdomen'};
+V22_BLOOD_ADDITIONS[V29_URINARY]=['UEC'];
+V23_DIAG_EASY[V29_URINARY]='급성 요폐';
+for(const group of [V22_BEGINNER,V22_INTERMEDIATE])if(!group.includes(V29_URINARY))group.push(V29_URINARY);
+V22_MODES.beginner.max=V22_BEGINNER.length;
+V22_MODES.intermediate.max=V22_INTERMEDIATE.length;
+
+// The user chose only one new drug, and NGT was already created in V28.2.
+if(!therapies.includes('Antihistamine'))therapies.push('Antihistamine');
+tx.Antihistamine='항히스타민제 (Antihistamine)';
+V10_PROCEDURES.delete('Antihistamine');
+const v29AnalgesiaTime=15;
+for(const [list,priority] of [
+ [V20_MED_ORDER,['Analgesia','Antiemetic','Antipyretic','Antibiotics','Bronchodilator','Corticosteroid','Antihistamine','NSAID therapy','Laxative','Antidiarrhoeal','Glucose replacement','Insulin pathway','Hypoglycaemic agent','Antihypertensive','Anticoagulation','Antiepileptic','Levodopa/Carbidopa']],
+ [V20_PROC_ORDER,['Oxygen therapy','IV fluids','Immobilisation','IDC Insertion','NGT Placement','Anaphylaxis treatment','Seizure pathway','Ventilatory support']]
+]){
+ const old=[...list];list.splice(0,list.length,...[...new Set([...priority.filter(x=>old.includes(x)||therapies.includes(x)),...old])]);
+}
+// Optional rescue medicine must never replace the anaphylaxis pathway.
+const v29PriorReasonable=v27ReasonableTx;
+v27ReasonableTx=function(p,med){
+ if(med==='Antihistamine')return v29Has(p,'Anaphylaxis')||!!p?.v14AllergySymptoms;
+ if(med==='NGT Placement')return v29Has(p,'Bowel Obstruction');
+ if(med==='IDC Insertion'&&v29Has(p,V29_URINARY))return true;
+ return v29PriorReasonable(p,med);
+};
+const v29PriorRequired=v10RequiredTx;
+v10RequiredTx=function(p){
+ const set=new Set(v29PriorRequired(p)),has=d=>v29Has(p,d);
+ if(has('Bowel Obstruction'))set.add('NGT Placement');
+ if(has(V29_URINARY))set.add('IDC Insertion');
+ if(has('Seizure'))set.add('Antiepileptic');
+ if(has('Gastroenteritis')){set.add('IV fluids');set.add('Antiemetic');set.add('Antibiotics')}
+ if(has('Fracture')){set.add('Immobilisation');set.add('Analgesia')}
+ if(has('Parkinson Disease'))set.add('Levodopa/Carbidopa');
+ return [...set];
+};
+const v29PriorRelevant=v10RelevantTest;
+v10RelevantTest=function(p,n){
+ if(v29Has(p,V29_URINARY)&&['Bladder Scan','UEC','Urinalysis'].includes(n))return true;
+ if(n==='BGL & Ketones'&&(v29Has(p,'Syncope')||v29Has(p,'Seizure')))return true;
+ return v29PriorRelevant(p,n);
+};
+const v29PriorRelevantExam=v16RelevantExam;
+v16RelevantExam=function(p,n){if(v29Has(p,V29_URINARY)&&n==='복부 진찰')return true;
+ if(v29Has(p,'Seizure')&&n==='신경학적 바이탈')return true;
+ return v29PriorRelevantExam(p,n);
+};
+
+// Exactly one CAT downgrading chance for each new patient (15% if CAT<5).
+// Severe physiological states override a merely diagnosis-based triage band.
+function v29CriticalState(p){
+ if(!p)return '';
+ if(p.crisis==='arrest'&&!p.resusSuccess||p.hr===0||p.sbp===0)return 'arrest';
+ if(p.crisis==='airway'&&!p.resusSuccess)return 'airway';
+ if(p.crisis==='shock'&&!p.resusSuccess)return 'shock';
+ if(p.v23SeizureActive&&p.gcs<=9)return 'seizure';
+ if(p.sbp<80&&p.hr>=120)return 'shock';
+ if(p.spo2<=85&&(p.rr>=30||p.rr<=8))return 'respiratory';
+ return '';
+}
+function v29ApplyTriage(p,reroll=false){
+ if(!p)return p;
+ const critical=v29CriticalState(p);
+ if(critical&&p.trueCat!==1){p.trueCat=1;p.condition=Math.min(p.condition,68)}
+ if(reroll){p.cat=Math.random()<.15?Math.min(5,p.trueCat+1):p.trueCat;p.v29TriageRolled=true;}
+ if(critical)p.v29Cat1Reason=critical;
+ return p;
+}
+function v29InitPatient(p,initial=false){
+ if(!p)return p;
+ if(v29Has(p,V29_URINARY)&&!p.v29UrinaryReady){
+  p.v29UrinaryReady=true;p.v24Retention=true;
+  // Isolated uncomplicated retention is a stable CAT 3 presentation.
+  // Do not inherit a random catastrophic state from the generic generator.
+  if(p.d===V29_URINARY&&!p.secondary){p.crisis=null;p.resusSuccess=false;p.v23SeizureActive=false;}
+  if(!p.v24IDCRelieved){p.v24BladderVolume=Math.round(650+Math.random()*450);p.v24BladderVolumeAtArrival=p.v24BladderVolume;}
+  p.trueCat=3;p.cat=3;p.gcs=15;p.temp=36.8;
+  p.pain=Math.max(7,Math.min(9,p.pain||7));p.sbp=Math.max(105,p.sbp);p.hr=v29Clamp(p.hr,85,105);
+  p.rr=v29Clamp(p.rr,15,22);p.spo2=Math.max(96,p.spo2);p.condition=Math.max(68,p.condition);
+  p.v10PainAtArrival=p.pain;p.v10TempAtArrival=p.temp;p.v20Pain=V282_PAIN_DESCRIPTORS[V29_URINARY];
+  p.v10Symptoms={...p.v10Symptoms,nausea:false,vomiting:false,polyuria:false,dysuria:false,fever:false};
+  p.v16Handover=`구급대 인계: ${p.sex} ${p.age}세, 갑작스러운 배뇨 불가와 치골상부 팽만통. 현재 GCS 15/15.`;
+  if(p.v26Initial)p.v26Initial={...p.v26Initial,pain:p.pain,sbp:p.sbp,hr:p.hr,spo2:p.spo2};
+  p.v16InitialCondition=p.condition;p.v21InitialCondition=p.condition;
+ }
+ if(initial)v29ApplyTriage(p,true);
+ return p;
+}
+const v29PreviousPatient=patient;
+patient=function(){return v29InitPatient(v29PreviousPatient(),true)};
+const v29PreviousAugment=augmentPatient;
+augmentPatient=function(p){return v29InitPatient(v29PreviousAugment(p),false)};
+// The forced CAT 1 route may upgrade a previously CAT 2/3 case; give it genuine
+// severe physiology instead of only replacing the number on the patient card.
+const v29PreviousForced=v25GenerateForced;
+v25GenerateForced=function(cat){const p=v29PreviousForced(cat);if(!p)return p;
+ if(cat===1){
+  p.trueCat=1;p.cat=1;p.condition=Math.min(68,p.condition);
+  if(!v29CriticalState(p)){
+   p.crisis=v29Has(p,'Anaphylaxis')?'airway':v29Has(p,'Sepsis')?'shock':v29Has(p,'STEMI')?'shock':Math.random()<.55?'shock':'airway';
+   if(p.crisis==='shock'){p.sbp=Math.min(78,p.sbp);p.hr=Math.max(132,p.hr)}
+   else{p.spo2=Math.min(85,p.spo2);p.rr=Math.max(32,p.rr)}
+  }
+  p.v29Cat1Reason=v29CriticalState(p)||p.crisis;
+  p.v16InitialCondition=Math.min(p.v16InitialCondition??68,p.condition);
+ }else if(cat===2&&!v29CriticalState(p)){p.trueCat=2;p.cat=2}
+ return p;
+};
+
+// The existing Bladder Scan button remains unchanged. Result: PVR in mL.
+// On re-order use the existing serial test list (no additional button or screen).
+const v29PreviousTestResult=testResult;
+testResult=function(p,n){
+ const t=n.startsWith('Emergency CT:')?n.slice('Emergency CT:'.length):n;
+ if(t==='Bladder Scan'){
+  const vol=Math.max(0,Math.round(Number(p.v24BladderVolume??130)));
+  return `PVR: ${vol} mL · ${vol>=500?'Significant urinary retention (현저한 요폐)':vol>=200?'Increased residual (잔뇨 증가)':'Bladder decompressed / 낮은 잔뇨량'}`;
+ }
+ // Clear, straight-forward key imaging findings without demanding all ancillary tests be abnormal.
+ const ds=v29Dx(p);
+ if(t==='CTPA'&&ds.includes('Pulmonary Embolism'))return '폐동맥 내 뚜렷한 충만 결손 (Pulmonary arterial filling defect): 폐색전증 소견 확인.';
+ if(t==='CT Abdomen/Pelvis'&&ds.includes('Bowel Obstruction'))return '장관 확장 및 명확한 이행점 (Dilated bowel loops with transition point). 장폐색 소견.';
+ if(t==='CT Abdomen/Pelvis'&&ds.includes('Appendicitis'))return '충수 확장 및 주변 지방 침윤 (Dilated appendix with periappendiceal fat stranding).';
+ if(t==='CT Abdomen/Pelvis'&&ds.includes('Pyelonephritis'))return '신장 실질의 국소 조영증강 저하 및 주변 염증 변화 (Findings consistent with pyelonephritis).';
+ if(t==='CT KUB'&&ds.includes('Renal Colic'))return `${p.v20StoneSide||'한쪽'} 요관 내 결석과 상부 요관 확장 (Ureteric calculus with upstream dilatation).`;
+ if(t==='Chest X-ray'&&ds.includes('Pneumonia'))return '국소 폐침윤과 폐경결 (Focal consolidation) 확인. 폐렴에 합당한 소견.';
+ return v29PreviousTestResult(p,n);
+};
+const v29PriorTextAbnormal=v28TextAbnormal;
+v28TextAbnormal=function(p,name,value){
+ if(name==='Bladder Scan'){const m=String(value).match(/PVR:\s*(\d+)/i);return m?Number(m[1])>=200:v29PriorTextAbnormal(p,name,value)}
+ return v29PriorTextAbnormal(p,name,value);
+};
+V26_SERIAL.add('Bladder Scan');
+const v29PriorOrder=order;
+order=function(name){const p=cur();
+ if(name==='Bladder Scan'&&p?.tests.some(t=>t.n===name)){
+  if((p.v21Serial||[]).some(t=>t.n===name&&s.time<t.readyAt)){
+   pushV6Notice('Bladder Scan 재검사 진행 중입니다.');return;
+  }
+  const at=s.time,minutes=v21GearTime('shoes');
+  const record={n:name,at,readyAt:at+minutes,r:testResult(p,name),repeat:true,penalty:0};
+  (p.v21Serial??=[]).push(record);
+  step(minutes);
+  render();pushV6Notice(`Bladder Scan 재검사 완료 · PVR ${Math.round(p.v24BladderVolume||0)} mL · ${minutes}분`);
+  return;
+ }
+ return v29PriorOrder(name);
+};
+
+// Follow-up Neuro Obs uses the existing exam result, no extra diagnosis UI.
+const v29PriorExamResult=examResult;
+examResult=function(p,name){const output=v29PriorExamResult(p,name);
+ if(name==='신경학적 바이탈'&&v29Has(p,'Seizure'))
+  return output+` · Seizure Activity: ${p.v23SeizureActive?'지속적인 경련 움직임 관찰 (active seizure)':'추가 경련 관찰되지 않음 (No further seizure observed)'}.`;
+ return output;
+};
+
+// An additional assessment-only test is not created. Helpers use existing
+// completed POCT, exam and medication history, never an invented hidden result.
+function v29ECGSafe(p){const record=(p.tests||[]).find(t=>t.n==='ECG'&&t.ready);
+ if(!record)return false;
+ const text=String(record.r||'').toLowerCase().replace(/명확한 급성 허혈 소견 없음|급성 허혈 소견 없음|허혈 소견 없음|no (?:acute )?isch(?:a)?emia|no acute changes/g,'');
+ return !/st[- ]?elevation|st분절 상승|st depression|st분절 하강|허혈|심방세동|atrial fibrillation|tachycardia|빈맥|av block|심실|ventricular|arrhythmia|부정맥|bradycardia|서맥/.test(text);
+}
+function v29AssessOne(p,d){const reasons=[],need=(ok,message)=>{if(!ok)reasons.push(message)};
+ const done=name=>v29Done(p,name),n=Number;
+ if(V29_GP_GENERAL.has(d)){
+  need(p.condition>=50,`Condition ${Math.round(p.condition)}% (필요 ≥50%)`);
+  need(!v29CrisisActive(p),'진행 중인 Crisis 안정화 필요');
+  if(d==='Hypoglycaemia'){need(done('Glucose replacement'),'Glucose replacement 미시행');need(v29TestDone(p,'BGL & Ketones'),'BGL 결과 미확인');need(p.bgl>=4,`BGL ${p.bgl} (필요 ≥4.0)`);need(p.gcs>=14,'의식 회복 필요 (GCS ≥14)')}
+  if(d==='Parkinson Disease'){need(done('Levodopa/Carbidopa'),'Levodopa 미투여');need(p.gcs>=14,'의식 상태 재평가 필요')}
+  if(d==='Migraine'){need(done('Analgesia'),'Analgesia 미투여');need(p.pain<=5,`Pain ${p.pain}/10 (필요 ≤5)`)}
+  if(d==='Hypertension')need(p.sbp<=160,`SBP ${p.sbp} mmHg (필요 ≤160)`);
+  if(d==='Constipation')need(done('Laxative'),'Laxative 미투여');
+  if(d===V29_URINARY){need(done('IDC Insertion'),'IDC Insertion 미시행');need(!!p.v24IDCRelieved&&p.v24BladderVolume<200,`방광 감압/배액 불충분 (PVR ${Math.round(p.v24BladderVolume||0)} mL)`);need(p.pain<=5,`Pain ${p.pain}/10 (필요 ≤5)`)}
+  return reasons;
+ }
+ if(!V29_GP_SPECIAL.has(d))return [`${names[d]||d}: 일반 GP 퇴원 대상이 아님`];
+ need(p.condition>=(d==='Anaphylaxis'?80:65),`Condition ${Math.round(p.condition)}% (필요 ≥${d==='Anaphylaxis'?80:65}%)`);
+ need(p.gcs>=(['Seizure','Syncope','Anaphylaxis'].includes(d)?15:14),`GCS ${p.gcs} (의식 회복 필요)`);
+ need(p.pain<=5,`Pain ${p.pain}/10 (필요 ≤5)`);
+ need(!v29CrisisActive(p),'진행 중인 Crisis 안정화 필요');
+ const hrMax=110,sbpMin=100;
+ const basicV=()=>{need(p.hr<hrMax,`HR ${p.hr}/min (필요 <110)`);need(p.sbp>=sbpMin,`SBP ${p.sbp} (필요 ≥100)`)};
+ switch(d){
+  case 'URTI':
+   if(p.v10TempAtArrival>=38)need(done('Antipyretic'),'발열에 대한 Antipyretic 미투여');
+   if(p.v10PainAtArrival>=5)need(done('Analgesia'),'통증에 대한 Analgesia 미투여');
+   need(p.rr>=12&&p.rr<=22,`RR ${p.rr} (필요 12–22)`);need(p.spo2>=95,`SpO₂ ${p.spo2}% (필요 ≥95%)`);need(p.temp<38.5,`Temp ${p.temp}°C (필요 <38.5)`);break;
+  case 'Gastroenteritis':
+   for(const m of ['IV fluids','Antiemetic','Antibiotics'])need(done(m),`${m} 미시행`);
+   basicV();need(p.temp<38.5,`Temp ${p.temp}°C (필요 <38.5)`);break;
+  case 'UTI':case 'Cellulitis':
+   need(done('Antibiotics'),'Antibiotics 미투여');basicV();need(p.rr<=22,`RR ${p.rr} (필요 ≤22)`);need(p.temp<38.5,`Temp ${p.temp}°C (필요 <38.5)`);break;
+  case 'Fracture':
+   need(done('Immobilisation'),'Immobilisation 미시행');need(done('Analgesia'),'Analgesia 미투여');break;
+  case 'Hyperglycaemia':
+   for(const m of v10RequiredTx(p).filter(x=>['Insulin pathway','Hypoglycaemic agent'].includes(x)))need(done(m),`${m} 미투여`);
+   need(p.bgl<16,`BGL ${p.bgl} (필요 <16)`);break;
+  case 'Renal Colic':need(done('Analgesia'),'Analgesia 미투여');break;
+  case 'Seizure':
+   need(done('Antiepileptic'),'Antiepileptic 미투여');need(v29TestDone(p,'BGL & Ketones'),'BGL 결과 미확인');need(p.bgl>=4,`BGL ${p.bgl} (필요 ≥4)`);
+   need((p.exams||[]).includes('신경학적 바이탈'),'Neuro Obs 미시행');need(p.v23SeizureActive!==true,'지속적인 경련 움직임');basicV();need(p.spo2>=95,`SpO₂ ${p.spo2}% (필요 ≥95%)`);break;
+  case 'Syncope':
+   need(v29ECGSafe(p),'ECG 결과 미확인 또는 위험 소견');need(v29TestDone(p,'BGL & Ketones'),'BGL 결과 미확인');need(p.bgl>=4,`BGL ${p.bgl} (필요 ≥4)`);basicV();need(p.spo2>=95,`SpO₂ ${p.spo2}% (필요 ≥95%)`);break;
+  case 'Asthma':
+   need(done('Bronchodilator'),'Bronchodilator 미시행');need(p.rr<=22,`RR ${p.rr} (필요 ≤22)`);need(p.spo2>=94,`SpO₂ ${p.spo2}% (필요 ≥94%)`);break;
+  case 'COPD Exacerbation':
+   need(done('Bronchodilator'),'Bronchodilator 미시행');need(p.rr<=24,`RR ${p.rr} (필요 ≤24)`);
+   // Existing game models some COPD patients with normal baseline sats: do not
+   // make those cases impossible to discharge by forbidding their own baseline.
+   const maxSpo2=(p.v26Initial?.spo2??p.spo2)>92?Math.max(92,Math.min(98,p.v26Initial?.spo2||96)):92;
+   need(p.spo2>=88&&p.spo2<=maxSpo2,`SpO₂ ${p.spo2}% (개인 목표 88–${maxSpo2}%)`);break;
+  case 'Anaphylaxis':
+   need(done('Anaphylaxis treatment'),'Anaphylaxis Treatment 미시행');need(p.hr>=50&&p.hr<=110,`HR ${p.hr} (필요 50–110)`);
+   need(p.sbp>=100,`SBP ${p.sbp} (필요 ≥100)`);need(p.rr>=12&&p.rr<=22,`RR ${p.rr} (필요 12–22)`);need(p.spo2>=95,`SpO₂ ${p.spo2}% (필요 ≥95%)`);break;
+ }
+ return reasons;
+}
+function v29AssessGP(p){if(!p)return {ok:false,reasons:['환자 선택 필요']};
+ const dx=v29Dx(p);if(!dx.length)return {ok:false,reasons:['진단 정보 없음']};
+ const reasons=dx.flatMap(d=>v29AssessOne(p,d));
+ return {ok:reasons.length===0,reasons,diagnoses:dx};
+}
+const v29PreviousGP=v17IsGPCase;
+v17IsGPCase=function(p){return v29AssessGP(p).ok};
+const v29PreviousReferralAllowed=v27ReferralAllowed;
+v27ReferralAllowed=function(p,mode,ref){
+ if(mode==='discharge')return v29AssessGP(p).ok;
+ if(mode==='refer'&&v29AssessGP(p).ok)return false;
+ return v29PreviousReferralAllowed(p,mode,ref);
+};
+// Gate discharge *before* scoring or removing the patient. Beginner and
+// intermediate receive actionable reasons; Expert needs a senior hint.
+const v29PriorFinish=finish;
+finish=function(mode){const p=cur();if(!p)return;
+ if(mode==='discharge'){
+  const assessment=v29AssessGP(p);
+  if(!assessment.ok){
+   p.v29LastDischargeRejection=true;
+   const expert=(p.v22Mode||v22Difficulty())==='expert';
+   show(`<h2>🏠 GP 퇴원 불가</h2><p>${expert?'현재 상태에서 GP 퇴원이 적절하지 않습니다. 필요하면 상급자 힌트를 요청하세요.':'현재 퇴원 조건을 충족하지 못했습니다.'}</p>`+
+    (expert?'':`<div class="hintbox"><b>미충족 조건</b><ul>${assessment.reasons.map(x=>`<li>${v10Esc(x)}</li>`).join('')}</ul></div>`)+
+    '<button class="primary" onclick="hide()">추가 치료·재평가</button>');
+   render();return;
+  }
+  p.v29LastDischargeRejection=false;
+ }
+ return v29PriorFinish(mode);
+};
+const v29PriorSenior=consultSenior;
+consultSenior=function(){const p=cur();if(!p)return;
+ const needDisclosure=(p.v22Mode||v22Difficulty())==='expert'&&!!p.v29LastDischargeRejection;
+ const reasons=needDisclosure?v29AssessGP(p).reasons:[];
+ v29PriorSenior();
+ if(reasons.length&&$('modalbox'))$('modalbox').insertAdjacentHTML('beforeend',`<div class="v29-hint"><b>🏠 GP 퇴원 판정 힌트</b><ul>${reasons.map(x=>`<li>${v10Esc(x)}</li>`).join('')}</ul></div>`);
+};
+
+// Existing treatment handler is invoked on FIRST administration. Repeat
+// analgesia only changes patient state; it never re-adds it to treatments or
+// grants a second scoring/reputation/first-action bonus.
+const v29PriorTreat=giveTreatment;
+function v29TreatVitals(p,key,before){const dx=v29Dx(p),has=d=>dx.includes(d);
+ const improveBP=(amount)=>{if(before.sbp<105)p.sbp=Math.max(p.sbp,Math.min(120,before.sbp+amount))};
+ if(key==='Analgesia'&&before.pain>=5){p.pain=Math.max(0,Math.min(p.pain,before.pain-2));if(before.hr>95)p.hr=Math.max(72,p.hr-4)}
+ if(key==='Antipyretic'&&before.temp>=38){p.temp=Math.max(36.8,Math.min(p.temp,Number((before.temp-.6).toFixed(1))));if(before.hr>95)p.hr=Math.max(75,p.hr-5)}
+ if(key==='IV fluids'&&before.sbp<110&&dx.some(d=>['Gastroenteritis','Sepsis','DKA','HHS','GI Bleeding','Hypotension','Pancreatitis'].includes(d))){improveBP(12);if(before.hr>102)p.hr=Math.max(88,p.hr-7)}
+ if(key==='Bronchodilator'&&dx.some(d=>['Asthma','COPD Exacerbation'].includes(d))){p.rr=Math.min(p.rr,Math.max(19,before.rr-4));p.spo2=Math.max(p.spo2,Math.min(96,before.spo2+2))}
+ if(key==='Anaphylaxis treatment'&&has('Anaphylaxis')){p.sbp=Math.max(p.sbp,Math.min(112,before.sbp+20));p.hr=Math.max(70,Math.min(p.hr,Math.max(100,before.hr-16)));p.rr=Math.min(p.rr,Math.max(20,before.rr-6));p.spo2=Math.max(p.spo2,Math.min(96,before.spo2+4));p.condition=Math.max(p.condition,Math.min(90,before.condition+8))}
+ if(key==='Antiepileptic'&&has('Seizure')){p.v23SeizureActive=false;if(!v29CrisisActive(p))p.gcs=Math.max(p.gcs,14);p.v29SeizureTreatedAt=s.time}
+ if(key==='Antihistamine'&&has('Anaphylaxis')){p.v29AllergicSkinSymptomsRelieved=true;p.condition=Math.min(100,p.condition+2);pushV6Notice('Antihistamine: 피부·가려움 증상 보조 완화 · 아나필락시스 응급치료를 대신하지 않음')}
+ if(key==='NGT Placement'&&has('Bowel Obstruction')){p.v29NgtEffective=true;p.pain=Math.max(0,p.pain-1);p.condition=Math.min(100,p.condition+4);pushV6Notice('NGT 감압 완료 · 구토와 복부 팽만 완화, 외과 진료 필요')}
+ if(key==='IDC Insertion'&&has(V29_URINARY)){
+  p.v24IDCRelieved=true;p.v24BladderVolume=Math.min(65,p.v24BladderVolume||45);
+  p.pain=Math.max(0,Math.min(p.pain,Math.max(1,before.pain-5)));
+  p.condition=Math.min(100,Math.max(p.condition,before.condition+9));
+  pushV6Notice(`배액 성공 · 현재 방광 용적 약 ${Math.round(p.v24BladderVolume)} mL`);
+ }
+ if(key==='Glucose replacement'&&has('Hypoglycaemia')){p.bgl=Math.max(5.2,p.bgl);if(!v29CrisisActive(p))p.gcs=Math.max(p.gcs,14)}
+ if(['Insulin pathway','Hypoglycaemic agent'].includes(key)&&has('Hyperglycaemia')&&!dx.some(d=>['DKA','HHS'].includes(d)))p.bgl=Math.max(5.4,Number((Math.min(p.bgl,before.bgl-(key==='Insulin pathway'?7:4))).toFixed(1)));
+ if(key==='Antihypertensive'&&has('Hypertension'))p.sbp=Math.max(128,Math.min(p.sbp,before.sbp-19));
+ if(key==='Antiemetic'&&has('Gastroenteritis')){p.condition=Math.min(100,p.condition+2);p.v29NauseaControlled=true}
+}
+giveTreatment=function(){const p=cur(),key=$('treat')?.value;if(!p||!key)return;
+ if(key==='Analgesia'&&v29Done(p,key)){
+  const events=p.v29AnalgesiaTimes??=[],last=events.length?events.at(-1):p.v29FirstAnalgesiaAt??s.time;
+  if(s.time-last<v29AnalgesiaTime){pushV6Notice(`진통제 재투여는 ${Math.ceil(v29AnalgesiaTime-(s.time-last))}분 뒤 가능합니다.`);return;}
+  const before=p.pain;if(before<=0){pushV6Notice('현재 통증이 0/10입니다. 추가 진통제는 필요하지 않습니다.');return;}
+  p.pain=Math.max(0,p.pain-(events.length>=2?1:2));if(p.hr>98)p.hr=Math.max(78,p.hr-3);
+  (p.v29AnalgesiaTimes??=[]).push(s.time);
+  step(5);render();pushV6Notice(`Analgesia 재투여 · Pain ${before}/10 → ${p.pain}/10 · 점수 중복 없음`);return;
+ }
+ const before={pain:p.pain,condition:p.condition,hr:p.hr,sbp:p.sbp,rr:p.rr,spo2:p.spo2,temp:p.temp,bgl:p.bgl};
+ const existed=v29Done(p,key);v29PriorTreat();
+ if(!existed&&v29Done(p,key)&&s.queue.includes(p)){
+  if(key==='Analgesia'){p.v29FirstAnalgesiaAt=s.time;(p.v29AnalgesiaTimes??=[]).push(s.time)}
+  v29TreatVitals(p,key,before);render();
+ }
+};
+const v29PriorMedicationMenu=v10OpenMedication;
+v10OpenMedication=function(kind){v29PriorMedicationMenu(kind);const p=cur(),grid=$('v10OptionGrid');if(!p||!grid)return;
+ for(const label of grid.querySelectorAll('label')){
+  const cb=label.querySelector('input.v10-med-check');if(!cb)continue;
+  if(cb.value==='Analgesia'&&v29Done(p,'Analgesia')){
+   const last=(p.v29AnalgesiaTimes||[]).at(-1)??p.v29FirstAnalgesiaAt??s.time;
+   const remaining=Math.max(0,Math.ceil(v29AnalgesiaTime-(s.time-last)));
+   cb.disabled=false;cb.checked=false;label.classList.remove('checked');
+   const small=label.querySelector('small');if(small)small.textContent=remaining?`Analgesia · ${remaining}분 후 재투여 가능`:'Analgesia · 재투여 가능 (점수 중복 없음)';
+  }
+  if(cb.value==='NGT Placement'){
+   const small=label.querySelector('small');if(small)small.textContent='장폐색 필수 감압 처치 · NGT Placement';
+  }
+ }
+};
+// Existing NGT intervention in V28.2 was optional; the required-treatment
+// table and core-action clock now recognise it as a mandatory obstruction step.
+V27_FIRST_ACTION['Bowel Obstruction']=['test:CT Abdomen/Pelvis','tx:NGT Placement','tx:IV fluids'];
+
+// Time-dependent, disease-specific response. No unconditional universal boost.
+// The V16/V21 step kernel remains authoritative for condition deterioration.
+const v29PriorStep=step;
+step=function(minutes){const before=s.queue.map(p=>({p,hr:p.hr,sbp:p.sbp,rr:p.rr,spo2:p.spo2,temp:p.temp,gcs:p.gcs}));
+ const r=v29PriorStep(minutes);const elapsed=Math.max(0,Number(minutes)||0);
+ if(!elapsed)return r;
+ for(const b of before){const p=b.p;if(!s.queue.includes(p)||!p.claimed)continue;
+  const dx=v29Dx(p),has=d=>dx.includes(d),rate=Math.min(3,elapsed/10);
+  if(v29Done(p,'Antipyretic')&&b.temp>=37.5){p.temp=Math.max(36.7,Number((p.temp-.15*rate).toFixed(1)));if(p.hr>95)p.hr=Math.max(80,p.hr-Math.round(rate*1.5))}
+  if(v29Done(p,'Antibiotics')&&dx.some(d=>['UTI','Cellulitis','Gastroenteritis','Pneumonia','Sepsis','Pyelonephritis','URTI'].includes(d))){p.temp=Math.max(36.8,Number((p.temp-.10*rate).toFixed(1)));if(p.hr>100)p.hr=Math.max(86,p.hr-Math.round(rate*2))}
+  if(v29Done(p,'IV fluids')&&dx.some(d=>['Gastroenteritis','Sepsis','DKA','HHS','GI Bleeding','Hypotension','Pancreatitis'].includes(d))&&p.sbp<110){p.sbp=Math.min(116,p.sbp+Math.max(1,Math.round(rate*2)));if(p.hr>100)p.hr=Math.max(88,p.hr-Math.round(rate*2))}
+  if(v29Done(p,'Bronchodilator')&&dx.some(d=>['Asthma','COPD Exacerbation'].includes(d))){p.rr=Math.max(18,p.rr-Math.max(1,Math.round(rate*1.5)));if(p.spo2<94)p.spo2=Math.min(95,p.spo2+Math.max(1,Math.round(rate)))}
+  if(v29Done(p,'Anaphylaxis treatment')&&has('Anaphylaxis')&&!v29CrisisActive(p)){p.sbp=Math.max(p.sbp,Math.min(118,p.sbp+Math.round(rate*3)));p.hr=Math.max(78,p.hr-Math.round(rate*3));p.rr=Math.max(18,p.rr-Math.round(rate*1.8));p.spo2=Math.min(98,p.spo2+Math.round(rate));p.condition=Math.min(95,p.condition+rate)}
+  if(v29Done(p,'Antiepileptic')&&has('Seizure')&&!v29CrisisActive(p)&&!p.v23SeizureActive)p.gcs=Math.min(15,p.gcs+Math.max(1,Math.round(rate)));
+  if(v29Done(p,'Insulin pathway')&&has('Hyperglycaemia')&&!dx.some(d=>['DKA','HHS'].includes(d)))p.bgl=Math.max(5.4,Number((p.bgl-.25*rate).toFixed(1)));
+ }
+ return r;
+};
+
+// V29 storage migration: keep old v28.2 save untouched; importing is opt-in.
+function v29ImportV28(){const raw=localStorage.getItem('ed-v28-ko');if(!raw)return;
+ if(!confirm('기존 v28.2 한글판 진행 상황을 v29로 복사할까요? 기존 v28.2 저장은 유지됩니다.'))return;
+ try{s=JSON.parse(raw);s.queue??=[];s.v22Started=true;s.v29Version=V29_VERSION;
+  for(const p of s.queue)augmentPatient(p);
+  v7InitState();v21Init();$('v22Setup')?.remove();s.speed=s.ended?0:1;render();v22Persist();pushV6Notice('v28.2 저장 데이터를 v29로 복사했습니다. 기존 저장은 유지됩니다.');
+ }catch(e){alert('v28.2 저장 불러오기 실패: '+e.message)}
+}
+const v29PriorBoot=v22Boot;
+v22Boot=function(){v29PriorBoot();const label=$('v27VersionTag');
+ if(label)label.textContent='v29.0 · 요폐·PVR 재검 · 치료별 바이탈 반응 · 18개 GP 퇴원 판정 · CAT 1 분류 개선';
+ const setup=$('v22Setup'),actions=setup?.querySelector('.v22-actions');
+ if(actions&&localStorage.getItem('ed-v28-ko')&&!setup.querySelector('#v29ImportV28'))
+  actions.insertAdjacentHTML('afterbegin','<button id="v29ImportV28" onclick="v29ImportV28()">기존 v28.2 한글판 저장 가져오기</button>');
+ // Update stale 15/30 descriptions after adding a new case.
+ if(setup){const options=setup.querySelectorAll('.v22-mode small');
+  if(options[0])options[0].innerHTML=options[0].innerHTML.replace('진단 15개',`진단 ${V22_BEGINNER.length}개`);
+  if(options[1])options[1].innerHTML=options[1].innerHTML.replace('진단 30개',`진단 ${V22_INTERMEDIATE.length}개`);}
+};
+const v29PriorHeader=renderHeader;
+renderHeader=function(){v29PriorHeader();const ver=document.querySelector('header .brand .v27-brand-version');if(ver)ver.textContent='v29.0';document.title='Emergency Doctor Simulator · v29.0 (한국어)'};
 
 // First launch waits for explicit character creation; the simulation never runs behind setup.
 s.speed=0;s.v22Started=false;v21Init();v22Boot();
