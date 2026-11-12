@@ -6847,6 +6847,63 @@ v22StartNew=function(){v28OldNew();if(s.v22Started){s.v28Version=V28_VERSION;v22
 const v28OldResume=v22Resume;
 v22Resume=function(){v28OldResume();if(s.v22Started){s.v28Version=V28_VERSION;for(const p of s.queue||[])augmentPatient(p);render()}};
 
+/* ================================================================
+   V28.1 — voluntary senior handover = abandon current patient.
+   This is NOT successful ICU admission or a completed clinical case.
+   Specialist referral and discharge retain their existing scoring.
+   ================================================================ */
+const v281PriorFinish=finish;
+finish=function(mode){
+ if(mode!=='icu')return v281PriorFinish(mode);
+ const p=cur();if(!p)return;
+ const who=p.name||'현재 환자';
+ if(!confirm(`${who}의 진료를 포기하고 상급자에게 넘길까요?\n\n임상 점수 0점 · XP 0 · 평판 보상 0 · 완료 환자 수에 포함되지 않습니다.`))return;
+ // Abandonment is intentionally independent of diagnosis, investigations,
+ // referral appropriateness or treatment; never call earlier scoring layers.
+ s.v281Abandoned=(s.v281Abandoned||0)+1;
+ (s.v7TodayEvents??=[]).push(`${fmt(s.time)} ${who}: 상급자에게 자발적 인계 · 진료 포기 · 보상 없음`);
+ s.queue=s.queue.filter(x=>x.id!==p.id);
+ if(s.selected===p.id)s.selected=null;
+ if(s.v25ActiveForcedId===p.id){
+  s.v25ActiveForcedId=null;
+  s.v25NextAssignment=s.time+25+Math.floor(Math.random()*16);
+ }
+ s.v28Version=V28_VERSION;
+ show(`<h2>↗ 상급자에게 인계 · 진료 포기</h2>
+  <p><b>${v10Esc(who)}</b> 환자의 진료를 종료하지 않고 상급자에게 넘겼습니다.</p>
+  <div class="scoregrid"><div class="scorecell">임상 평가 점수<b>0점</b></div>
+  <div class="scorecell">획득 경험치<b>+0 XP</b></div>
+  <div class="scorecell">평판 보상<b>+0</b></div>
+  <div class="scorecell">진료 완료 인정<b>미인정</b></div></div>
+  <p class="muted small">진료 포기는 진료 성공, 전문과 의뢰 및 빠른 인계 보너스에 해당하지 않습니다. 환자는 상급자가 이어서 담당합니다.</p>
+  <button class="primary" onclick="hide()">다음 환자 선택</button>`);
+ render();v22Persist();
+};
+const v281PriorRenderRight=renderRight;
+renderRight=function(){
+ v281PriorRenderRight();
+ const btn=document.querySelector('button[onclick="finish(\'icu\')"]');
+ if(btn){btn.textContent='↗ 상급자 인계 · 진료 포기 (보상 없음)';btn.title='담당 환자 포기: 점수·XP·평판 보상 없음';}
+};
+for(const t of V24_TOUR){
+ if(t.title.includes('진료 종료')||t.title.includes('전문과 의뢰 또는 퇴원')){
+  t.text='퇴원 또는 올바른 전문과 의뢰는 정상적으로 채점됩니다. 상급자에게 자발적으로 인계하면 진료를 포기한 것으로 처리되어 점수·XP·평판 보상이 없습니다.';
+ }
+}
+const v281PriorHeader=renderHeader;
+renderHeader=function(){
+ v281PriorHeader();
+ const el=document.querySelector('header .brand .v27-brand-version');
+ if(el)el.textContent='v28.1';
+ document.title='Emergency Doctor Simulator · v28.1';
+};
+const v281PriorBoot=v22Boot;
+v22Boot=function(){
+ v281PriorBoot();
+ const el=$('v27VersionTag');
+ if(el)el.textContent='v28.1 · 검사 팝업 및 판정 개선 · 자발적 상급자 인계는 진료 포기 (보상 없음)';
+};
+
 // First launch waits for explicit character creation; the simulation never runs behind setup.
 s.speed=0;s.v22Started=false;v21Init();v22Boot();
 setInterval(()=>{if(s.v22Started&&s.speed&&!s.ended){s.acc+=s.speed;if(s.acc>=1){let m=Math.floor(s.acc);s.acc-=m;step(m)}}},1000);
