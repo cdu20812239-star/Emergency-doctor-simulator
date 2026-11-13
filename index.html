@@ -409,7 +409,7 @@ function rank(){
  }
  return current;
 }
-function legacyPatient(){let d=pick(diseases),cat=['STEMI','Stroke','Anaphylaxis','Sepsis','Aortic Dissection','Intracranial Haemorrhage'].includes(d[0])?pick([1,2,2]):['ACS','Pulmonary Embolism','DKA','Meningitis'].includes(d[0])?pick([2,2,3]):pick([3,3,4,4,5]);let p={id:'ED-'+s.uid++,d:d[0],cat,age:18+Math.floor(Math.random()*70),sex:pick(['남성','여성']),name:pick(['김민준','이서준','박지훈','최도윤','정현우','강지호','윤하준','한지민','김서연','이지은','박수빈','최하은','정유진','강민서','윤지아','한서윤','임수아','송지후','오민재','조예린','배지안','신유나','서채원','권태현']),wait:0,condition:cat===1?80:cat===2?88:100,hr:pick([75,86,98,110]),sbp:pick([105,120,135,148]),dbp:pick([65,76,85]),rr:pick([15,18,22]),spo2:pick([94,96,98,99]),temp:pick([36.6,37.1,37.9,38.4]),gcs:15,bgl:pick([4.8,5.9,7.2,9.1]),pain:pick([3,5,7,9]),q:0,hints:0,asked:[],branch:null,history:[],exams:[],tests:[],treatments:[],observed:0};
+function legacyPatient(){let d=v31PickDisease(),cat=['STEMI','Stroke','Anaphylaxis','Sepsis','Aortic Dissection','Intracranial Haemorrhage'].includes(d[0])?pick([1,2,2]):['ACS','Pulmonary Embolism','DKA','Meningitis'].includes(d[0])?pick([2,2,3]):pick([3,3,4,4,5]);let p={id:'ED-'+s.uid++,d:d[0],cat,age:18+Math.floor(Math.random()*70),sex:pick(['남성','여성']),name:pick(['김민준','이서준','박지훈','최도윤','정현우','강지호','윤하준','한지민','김서연','이지은','박수빈','최하은','정유진','강민서','윤지아','한서윤','임수아','송지후','오민재','조예린','배지안','신유나','서채원','권태현']),wait:0,condition:cat===1?80:cat===2?88:100,hr:pick([75,86,98,110]),sbp:pick([105,120,135,148]),dbp:pick([65,76,85]),rr:pick([15,18,22]),spo2:pick([94,96,98,99]),temp:pick([36.6,37.1,37.9,38.4]),gcs:15,bgl:pick([4.8,5.9,7.2,9.1]),pain:pick([3,5,7,9]),q:0,hints:0,asked:[],branch:null,history:[],exams:[],tests:[],treatments:[],observed:0};
 if(p.d==='DKA'){p.bgl=26;p.rr=29;p.hr=122}if(p.d==='Hypoglycaemia'){p.bgl=2.6;p.hr=112}if(p.d==='Sepsis'){p.temp=39.2;p.hr=126;p.sbp=90;p.rr=27}if(p.d==='Anaphylaxis'){p.sbp=80;p.hr=135;p.spo2=89;p.rr=31}if(p.d==='Stroke')p.gcs=14;p.name=pick(p.sex==='남성'?['김민준','이서준','박지훈','최도윤','정현우','강지호','윤하준','송지후','오민재','권태현']:['한지민','김서연','이지은','박수빈','최하은','정유진','강민서','윤지아','한서윤','임수아','조예린','배지안','신유나','서채원']);return p}
 function cur(){return s.queue.find(x=>x.id===s.selected)}
 function setSpeed(n){s.speed=n;renderHeader()}
@@ -2588,7 +2588,7 @@ step=function(minutes){
   const severity=V16_FAST_DIAGNOSES.has(p.d)?1.5:V16_HIGH_DIAGNOSES.has(p.d)?1.2:V16_LOW_DIAGNOSES.has(p.d)?.5:1;
   const care=p.v16CareLevel||0,protect=p.resusSuccess?.16:care>=2?.3:care>=1?.7:1;
   const modeRate=(p.v22Mode&&typeof V22_MODES!=='undefined'&&V22_MODES[p.v22Mode])?(V22_MODES[p.v22Mode].rate/V22_MODES[v22Difficulty()].rate):1;
-  const decrement=v25FullyTreated(p)?0:V16_CAT_RATE[p.trueCat||p.cat]/60*elapsed*severity*protect*modeRate;
+  const decrement=v30NaturalDecline(p,elapsed);
   const previousCondition=p.condition;
   p.condition=Math.max(0,p.condition-decrement);
   const crossings=Math.floor(s.time/15)-Math.floor(previous/15);
@@ -2705,7 +2705,7 @@ function v17IsGPCase(p){
 const v17PriorFinish=finish;
 finish=function(mode){
  const p=cur();
- if(p&&mode==='refer'&&v17IsGPCase(p)){
+ if(p&&mode==='refer'&&v17IsGPCase(p)&&!(V31_REFERRALS[p.d]||[]).includes($('refer')?.value)){
   s.rep-=5;s.v6WrongReferrals=(s.v6WrongReferrals||0)+1;
   show(`<h2>📞 전문과 의뢰 거절</h2><p>${v10Esc(p.name||'환자')}는 현재 안정적이며 응급 전문과 지속 치료가 필요하지 않습니다.</p><p>적절한 진료 방향: <b>GP 추적관찰 후 퇴원 (GP follow-up & discharge)</b></p><p>불필요한 의뢰: 평판 −5</p><button class="primary" onclick="hide()">진료 계속</button>`);
   render();return;
@@ -3843,8 +3843,8 @@ step=function(minutes){if(s.ended||!Number.isFinite(minutes)||minutes<=0)return;
  // Physiological recovery is gradual, contingent on disease-specific effective care.
  const patients=[...s.queue];for(const p of patients){if(!p.claimed)continue;
   const a=v21EffectiveTreatment(p),cat=p.trueCat||p.cat,ds=[p.d,p.secondary].filter(Boolean);
-  const treatmentRecovery=v25FullyTreated(p)?2.0:0;
-  if(treatmentRecovery){const gain=Math.min(7,treatmentRecovery*minutes/10);
+  const treatmentRecovery=v30AutoRecoveryRate(p)/6;
+  if(treatmentRecovery){const gain=Math.max(0,treatmentRecovery*minutes/10);
    p.condition=Math.min(97,(p.condition||0)+gain);
    p.hr=Math.max(65,Math.round(p.hr-gain*.7));if(p.sbp<110)p.sbp=Math.min(119,Math.round(p.sbp+gain*.6));
    if(ds.some(d=>['Asthma','COPD Exacerbation','Pneumonia','Heart Failure'].includes(d))){p.rr=Math.max(15,Math.round(p.rr-gain*.6));p.spo2=Math.min(98,Math.round(p.spo2+gain*.4))}
@@ -4210,7 +4210,7 @@ v21RenderAvatar=function(){v22OldRenderAvatar();const panel=$('v21Avatar'),field
 };
 
 // Safe browser-local autosave: after gameplay mutations, periodically, and on page hide.
-const V22_STORAGE_KEY='ed-v29-ko';let v22SaveTimer=null,v22LastSaved=0,v22SaveProblem=false;
+const V22_STORAGE_KEY='ed-v31-ko';let v22SaveTimer=null,v22LastSaved=0,v22SaveProblem=false;
 function v22Persist(notify=false){
  if(!s.v22Started)return;
  if(v22SaveTimer){clearTimeout(v22SaveTimer);v22SaveTimer=null}
@@ -4279,7 +4279,7 @@ function v22ResetState(){
  };
  v7InitState();v16InitShiftQueue();s.v22Started=true;s.speed=1;s.cash=0;v21Init();
 }
-function v22StartNew(){if(localStorage.getItem(V22_STORAGE_KEY)&&!confirm('기존 v29 자동저장 진행 상황을 덮어쓰고 새 게임을 시작할까요?'))return;
+function v22StartNew(){if(localStorage.getItem(V22_STORAGE_KEY)&&!confirm('기존 v31 자동저장 진행 상황을 덮어쓰고 새 게임을 시작할까요?'))return;
  v22ResetState();$('v22Setup')?.remove();render();v22Persist();pushV6Notice(`${V22_MODES[v22Difficulty()].title} 난이도 · 제1주차 근무 시작`);
 }
 function v22Resume(){const raw=localStorage.getItem(V22_STORAGE_KEY);if(!raw)return;
@@ -4378,7 +4378,7 @@ patient=function(){
  // novice/intermediate only see the 15/30-item pools.
  if(v22Difficulty()==='expert'){
   let tries=0;while(['ACS','MI'].includes(p.d)&&tries++<120)p=v23PrevPatient();
- }else if(['ACS','STEMI','NSTEMI','Unstable Angina'].includes(p.d)){
+ }else if(false){
   p.v23MIType=p.d==='STEMI'?'stemi':'nstemi';p.d='MI';p.secondary=null;
  }
  if(p.d==='MI'){
@@ -5274,11 +5274,11 @@ giveTreatment=function(){const p=cur(),name=$('treat')?.value;if(!p||!name)retur
  const isCorrect=v10RequiredTx(p).includes(name);
  v25BeforeTreatment();
  if(!prior&&p.treatments?.includes(name)&&isCorrect&&s.queue.includes(p)){
-  const priority=p.trueCat||p.cat,critical=['Sepsis','STEMI','Anaphylaxis','DKA','Intracranial Haemorrhage','Pulmonary Embolism'].some(d=>[p.d,p.secondary].includes(d));
-  const gain=critical?3:priority<=2?4:5;
+  const gain=Math.min(2,Math.max(0,8-(p.v30GeneralTxGain||0)));
+  p.v30GeneralTxGain=(p.v30GeneralTxGain||0)+gain;
   // If the legacy routine already gave +15, scale it back. Treating an error
   // continues to invoke its pre-existing deterioration/penalty logic.
-  p.condition=Math.min(100,Math.max(condition,condition+gain));
+  p.condition=Math.min(100,condition+gain);
   pushV6Notice(`적절한 처치 반응 · 컨디션 +${Math.round(p.condition-condition)}%p (필수 치료 ${v10RequiredTx(p).filter(t=>p.treatments.includes(t)).length}/${v10RequiredTx(p).length})`);
   render();
  }
@@ -6337,7 +6337,7 @@ function v27RenderFeedback(p,r,repDiff,mode,ref){
  if(missed.length)bad.push('미시행 필수 치료: '+missed.map(x=>tx[x]||x).join(', '));
  if(r.unnecessary.length)bad.push('불필요한 처방: '+r.unnecessary.map(x=>tx[x]||x).join(', '));
  if(r.irrelevantRegular.length)bad.push('불필요한 검사: '+r.irrelevantRegular.map(t=>labelTest(t.n)).join(', '));
- if(r.urgent.length)bad.push('불필요한 응급 CT 즉시 판독: '+r.urgent.map(t=>labelTest(t.n)).join(', '));
+ if(r.urgent.length)bad.push('불필요한 응급 영상검사: '+r.urgent.map(t=>labelTest(t.n)).join(', '));
  if(r.examMiss.length)bad.push('불필요한 진찰: '+r.examMiss.join(', '));
  if(p.v24CriticalAntithrombotic)bad.push('두개내 출혈에서 항응고제 사용으로 환자 상태 및 평판에 큰 불이익이 발생했습니다.');
  if(r.wrongReferrals)bad.push('거절된 부적절한 의뢰 '+r.wrongReferrals+'회 · 진료 방향 −'+Math.min(20,r.wrongReferrals*5)+'점');
@@ -7055,7 +7055,7 @@ V22_MODES.intermediate.max=V22_INTERMEDIATE.length;
 if(!therapies.includes('Antihistamine'))therapies.push('Antihistamine');
 tx.Antihistamine='항히스타민제 (Antihistamine)';
 V10_PROCEDURES.delete('Antihistamine');
-const v29AnalgesiaTime=15;
+const v29AnalgesiaTime=30;
 for(const [list,priority] of [
  [V20_MED_ORDER,['Analgesia','Antiemetic','Antipyretic','Antibiotics','Bronchodilator','Corticosteroid','Antihistamine','NSAID therapy','Laxative','Antidiarrhoeal','Glucose replacement','Insulin pathway','Hypoglycaemic agent','Antihypertensive','Anticoagulation','Antiepileptic','Levodopa/Carbidopa']],
  [V20_PROC_ORDER,['Oxygen therapy','IV fluids','Immobilisation','IDC Insertion','NGT Placement','Anaphylaxis treatment','Seizure pathway','Ventilatory support']]
@@ -7405,7 +7405,790 @@ v22Boot=function(){v29PriorBoot();const label=$('v27VersionTag');
 const v29PriorHeader=renderHeader;
 renderHeader=function(){v29PriorHeader();const ver=document.querySelector('header .brand .v27-brand-version');if(ver)ver.textContent='v29.0';document.title='Emergency Doctor Simulator · v29.0 (한국어)'};
 
+
+
+/* =======================================================================
+   V30 — diagnosis-led condition balance, medicines and specific senior hints
+   Pure offline additions. Keeps GP/referral and existing grading interfaces.
+   ======================================================================= */
+const V30_VERSION='30.0';
+const V30_HYPO='Hypothyroidism';
+const V30_RATE={A:3,B:8,C:14,D:22};
+const V30_GROUPS={
+ A:new Set(['URTI','Migraine','Constipation','Renal Colic','UTI','Cellulitis','Fracture','Parkinson Disease','Hypertension','Hypothyroidism','Syncope']),
+ C:new Set(['Pneumonia','DKA','HHS','Bowel Obstruction','GI Bleeding','Pulmonary Embolism','Meningitis','Stroke','Pneumothorax','Pulmonary Oedema','Heart Failure','Hyperkalemia','Hypotension','Respiratory Acidosis','Cauda Equina Syndrome','Acute Kidney Injury','Pyelonephritis','Pancreatitis']),
+ D:new Set(['STEMI','MI','Sepsis','Anaphylaxis','Aortic Dissection','Intracranial Haemorrhage','Ectopic Pregnancy'])
+};
+function v30DiseaseGroup(d){return V30_GROUPS.A.has(d)?'A':V30_GROUPS.C.has(d)?'C':V30_GROUPS.D.has(d)?'D':'B'}
+function v30BaseRate(p){return Math.max(...v29Dx(p).map(d=>V30_RATE[v30DiseaseGroup(d)]),V30_RATE.A)}
+function v30PatientSeverity(p){
+ // Choose exactly one physiology category, never multiply a second crisis factor.
+ if(v29CrisisActive(p)||p.hr<=35||p.hr>=150||p.sbp<80||p.spo2<85||p.rr<8||p.rr>=36||p.gcs<=8)return 1.6;
+ if(p.hr<=45||p.hr>=125||p.sbp<95||p.spo2<92||p.rr<10||p.rr>=28||p.gcs<=12)return 1.3;
+ if(p.hr>=50&&p.hr<=105&&p.sbp>=100&&p.sbp<=160&&p.spo2>=95&&p.rr>=12&&p.rr<=22&&p.gcs>=14&&p.temp<38.5)return .8;
+ return 1;
+}
+const V30_SPECIALIST_RECOVERY=new Set([
+ 'Appendicitis','Diverticulitis','Bowel Obstruction','Cholecystitis','Ectopic Pregnancy','Aortic Dissection',
+ 'Intracranial Haemorrhage','Stroke','Cauda Equina Syndrome','GI Bleeding','STEMI','MI','NSTEMI','Unstable Angina',
+ 'Pneumothorax','Meningitis','TIA'
+]);
+const V30_RESOLVED_RECOVERY=new Set(['Hypoglycaemia','Acute Urinary Retention','SVT']);
+function v30RecoveryType(p){const ds=v29Dx(p);if(ds.includes(V30_HYPO))return 'steady';
+ if(ds.some(d=>V30_SPECIALIST_RECOVERY.has(d)))return 'specialist';
+ if(ds.some(d=>V30_RESOLVED_RECOVERY.has(d)))return 'resolved';
+ return 'gradual';
+}
+function v30AutoRecoveryRate(p){if(!v25FullyTreated(p))return 0;
+ const type=v30RecoveryType(p);return type==='resolved'?8:type==='gradual'?3:0;
+}
+function v30NaturalDecline(p,elapsed){
+ const level=p.v16CareLevel||0,fully=v25FullyTreated(p),type=v30RecoveryType(p);
+ const protection=fully?(type==='specialist'?.15:0):(p.resusSuccess?.16:level>=2?.3:level>=1?.7:1);
+ const difficulty=V22_MODES[p.v22Mode||v22Difficulty()]?.rate??1;
+ return Math.max(0,v30BaseRate(p)*v30PatientSeverity(p)*difficulty*protection*elapsed/60);
+}
+
+// Antibiotics are mandatory for these two diagnoses with no conditional branch.
+for(const d of ['Appendicitis','Diverticulitis'])appropriateTx[d]=[...new Set([...(appropriateTx[d]||[]),'Antibiotics'])];
+const v30OldReasonableTx=v27ReasonableTx;
+v27ReasonableTx=function(p,med){
+ if(med==='Antibiotics'&&v29Dx(p).some(d=>['Appendicitis','Diverticulitis','Gastroenteritis'].includes(d)))return true;
+ if(med==='Thyroxine'&&v29Has(p,V30_HYPO))return true;
+ return v30OldReasonableTx(p,med);
+};
+
+// Existing test panel, new playable diagnosis and prescribable medicine.
+if(!diseases.some(d=>d[0]===V30_HYPO))diseases.push([
+ V30_HYPO,'Metabolic','Fatigue and cold intolerance','Endocrinology / GP','TFT (TSH, Free T4)',
+ 'Thyroxine replacement and GP follow-up when clinically stable',
+ 'Persistent fatigue, cold intolerance, constipation, dry skin, weight gain'
+]);
+names[V30_HYPO]='갑상선기능저하증';
+complaints['Fatigue and cold intolerance']='피로·추위 민감성';
+if(typeof symptomDescriptions!=='undefined')symptomDescriptions[V30_HYPO]='피로, 추위 민감성, 변비, 피부 건조 및 체중 증가';
+referKeys[V30_HYPO]=['Endocrinology','GP'];
+appropriateTx[V30_HYPO]=['Thyroxine'];
+if(!therapies.includes('Thyroxine'))therapies.push('Thyroxine');
+tx.Thyroxine='갑상선호르몬 (Thyroxine / Levothyroxine)';
+V10_PROCEDURES.delete('Thyroxine');
+if(!V20_MED_ORDER.includes('Thyroxine'))V20_MED_ORDER.push('Thyroxine');
+if(!V29_GP_SPECIAL.has(V30_HYPO))V29_GP_SPECIAL.add(V30_HYPO);
+V27_ESSENTIAL_TESTS[V30_HYPO]=[['TFT']];
+V27_FIRST_ACTION[V30_HYPO]=['test:TFT','tx:Thyroxine'];
+V14_HINT_TESTS[V30_HYPO]=['TFT'];
+V14_HINT_EXAMS[V30_HYPO]='심음 청진';
+seniorClues[V30_HYPO]='지속적인 피로, 서맥, 추위 민감성과 변비를 함께 설명할 수 있는 내분비 문제를 생각해 보세요.';
+V23_DIAG_EASY[V30_HYPO]='갑상선기능저하증';
+V22_BLOOD_ADDITIONS[V30_HYPO]=['TFT'];
+for(const list of [V22_BEGINNER,V22_INTERMEDIATE])if(!list.includes(V30_HYPO))list.push(V30_HYPO);
+V22_MODES.beginner.max=V22_BEGINNER.length;
+V22_MODES.intermediate.max=V22_INTERMEDIATE.length;
+
+const v30OldRequired=v10RequiredTx;
+v10RequiredTx=function(p){const need=new Set(v30OldRequired(p));
+ if(v29Has(p,V30_HYPO)){need.add('Thyroxine');if(!p.secondary)need.delete('Laxative')}
+ return [...need];
+};
+const v30OldRelevantTest=v10RelevantTest;
+v10RelevantTest=function(p,n){return v29Has(p,V30_HYPO)&&n==='TFT'||v30OldRelevantTest(p,n)};
+const v30OldExamRelevant=v16RelevantExam;
+v16RelevantExam=function(p,n){return v29Has(p,V30_HYPO)&&n==='심음 청진'||v30OldExamRelevant(p,n)};
+
+function v30InitHypo(p){if(!p||!v29Has(p,V30_HYPO)||p.v30HypoReady)return p;
+ p.v30HypoReady=true;
+ if(p.d===V30_HYPO&&!p.secondary){
+  p.crisis=null;p.resusSuccess=false;p.v23SeizureActive=false;
+  const cat=Math.random()<.25?5:4;p.trueCat=cat;p.cat=cat===4&&Math.random()<.15?5:cat;
+  p.condition=Math.max(69,Math.min(97,p.condition));p.hr=55+Math.round(Math.random()*12);
+  p.sbp=108+Math.round(Math.random()*15);p.dbp=65+Math.round(Math.random()*12);
+  p.rr=12+Math.round(Math.random()*6);p.spo2=97+Math.round(Math.random()*2);
+  p.temp=36.0+Math.round(Math.random()*3)/10;p.gcs=15;p.pain=Math.min(2,p.pain||0);
+  p.v10PainAtArrival=p.pain;p.v10TempAtArrival=p.temp;
+  p.v10Symptoms={...(p.v10Symptoms||{}),fever:false,nausea:false,vomiting:false,dysuria:false};
+  p.v16InitialCondition=p.condition;p.v21InitialCondition=p.condition;
+  p.v16Handover='구급대 인계: 장기간 피로, 추위 민감성, 체중 증가와 변비를 호소. 현장 의식 명료, 활력징후 대체로 안정.';
+  if(p.v26Initial)p.v26Initial={...p.v26Initial,hr:p.hr,sbp:p.sbp,spo2:p.spo2,temp:p.temp,pain:p.pain};
+ }
+ return p;
+}
+const v30OldPatient=patient;
+patient=function(){return v30InitHypo(v30OldPatient())};
+const v30OldAugment=augmentPatient;
+augmentPatient=function(p){return v30InitHypo(v30OldAugment(p))};
+const v30OldAnswer=answer;
+answer=function(p,key){
+ if(v29Has(p,V30_HYPO)){
+  const messages={onset:'몇 달에 걸쳐 서서히 피곤해졌어요. 최근 추위를 유난히 많이 타요.',assoc:'변비가 심해졌고, 피부가 건조해지고 체중이 늘었어요.',risk:'갑상선 질환은 진단받은 적이 없어요. 기존 약물과 가족력은 확인해 주세요.',trigger:'움직여도 피로가 쉽게 가시지 않고 추운 곳에서는 더 힘들어요.',previous:'이렇게 오래 피곤했던 적은 없어요.',bowel:'며칠씩 변을 보기 어려워졌고 장운동이 느려진 느낌이에요.',fever:'열이나 오한은 없어요.',meds:'갑상선호르몬제를 복용한 적은 없어요.',duration:'몇 달 전부터 점차 심해졌어요.',assocDetail:'변비, 추위 민감성, 피부 건조가 가장 불편해요.'};
+  if(messages[key])return messages[key];
+ }
+ return v30OldAnswer(p,key);
+};
+const v30OldTestResult=testResult;
+testResult=function(p,name){
+ const n=name.startsWith('Emergency CT:')?name.slice(13):name;
+ if(n==='TFT'){
+  const isHypo=v29Has(p,V30_HYPO);
+  return [calcLab('TSH',isHypo?18.6:2.1,.4,4,'mIU/L',1),
+          calcLab('Free T4',isHypo?7.2:15.3,10,22,'pmol/L',1)];
+ }
+ return v30OldTestResult(p,name);
+};
+// GP special rules reuse existing shared thresholds; only the TFT/medicine
+// completion checks belong to the new diagnosis (no new Condition threshold).
+const v30OldGPAssess=v29AssessOne;
+v29AssessOne=function(p,d){const problems=v30OldGPAssess(p,d);
+ if(d===V30_HYPO){
+  if(!v29TestDone(p,'TFT'))problems.push('TFT 결과 미확인');
+  if(!v29Done(p,'Thyroxine'))problems.push('Thyroxine 미처방');
+ }
+ return problems;
+};
+
+// Additional recovery only for source-correcting interventions, never an
+// unlimited +15 for routine medication. The generic reward is capped at +8.
+const v30OldGiveTreatment=giveTreatment;
+const V30_ANTIPYRETIC_INTERVAL=120;
+giveTreatment=function(){const p=cur(),name=$('treat')?.value;if(!p||!name)return;
+ if(name==='Antipyretic'&&v29Done(p,name)){
+  const times=p.v30AntipyreticTimes||[];
+  const last=times.at(-1)??p.v30FirstAntipyreticAt??s.time;
+  if(s.time-last<V30_ANTIPYRETIC_INTERVAL){pushV6Notice(`해열제 재투여는 ${Math.ceil(V30_ANTIPYRETIC_INTERVAL-(s.time-last))}분 뒤 가능합니다.`);return}
+  if(p.temp<38){pushV6Notice('체온이 38°C 미만이므로 해열제 재투여가 필요하지 않습니다.');return}
+  const before=p.temp;p.temp=Math.max(36.8,Number((p.temp-.6).toFixed(1)));
+  if(p.hr>95)p.hr=Math.max(75,p.hr-5);
+  (p.v30AntipyreticTimes??=[]).push(s.time);step(5);render();
+  pushV6Notice(`Antipyretic 재투여 · Temp ${before}°C → ${p.temp}°C · 점수 중복 없음`);return;
+ }
+ const previous=v29Done(p,name),preCondition=p.condition;
+ v30OldGiveTreatment();
+ if(!previous&&v29Done(p,name)&&s.queue.includes(p)){
+  if(name==='Antipyretic'){p.v30FirstAntipyreticAt=s.time;(p.v30AntipyreticTimes??=[]).push(s.time)}
+  if(name==='Glucose replacement'&&v29Has(p,'Hypoglycaemia'))p.condition=Math.min(100,p.condition+8);
+  // Thyroxine is a prescription, not an immediate restoration of thyroid function.
+  if(name==='Thyroxine'&&v29Has(p,V30_HYPO))pushV6Notice('Thyroxine 처방 완료 · 갑상선기능의 즉각적인 정상화는 발생하지 않습니다.');
+  render();
+ }
+};
+const v30OldMedicationMenu=v10OpenMedication;
+v10OpenMedication=function(kind){v30OldMedicationMenu(kind);const p=cur(),grid=$('v10OptionGrid');if(!p||!grid)return;
+ for(const label of grid.querySelectorAll('label')){
+  const cb=label.querySelector('input.v10-med-check');if(!cb)continue;
+  if(cb.value==='Antipyretic'&&v29Done(p,'Antipyretic')){
+   const last=(p.v30AntipyreticTimes||[]).at(-1)??p.v30FirstAntipyreticAt??s.time;
+   const wait=Math.max(0,Math.ceil(V30_ANTIPYRETIC_INTERVAL-(s.time-last)));
+   cb.disabled=false;cb.checked=false;label.classList.remove('checked');
+   const small=label.querySelector('small');if(small)small.textContent=wait?`Antipyretic · ${wait}분 뒤 재투여 가능`:'Antipyretic · 재투여 가능 (Temp ≥38°C, 점수 중복 없음)';
+  }
+ }
+};
+
+// Hints: common action selector; difficulty affects phrasing only.
+const V30_URGENT_TX=['Anaphylaxis treatment','Glucose replacement','Seizure pathway','Antiepileptic','Insulin pathway','Vasopressor support','Ventilatory support','Pneumothorax pathway','Stroke pathway','Anticoagulation','Antiplatelet pathway'];
+function v30HintsRequired(p){return new Set(v10RequiredTx(p))}
+function v30HintTask(p){const dx=v29Dx(p),required=v30HintsRequired(p),done=n=>v29Done(p,n);
+ const task=(type,name,context='')=>({type,name,context});
+ // Active physiology threats override symptom management or investigation.
+ if(p.spo2<90&&!done('Oxygen therapy'))return task('treatment','Oxygen therapy','hypoxia');
+ if(p.sbp<85&&!done('IV fluids')&&v27ReasonableTx(p,'IV fluids'))return task('treatment','IV fluids','shock');
+ if(dx.some(d=>['Sepsis','Meningitis'].includes(d))&&required.has('Antibiotics')&&!done('Antibiotics'))return task('treatment','Antibiotics','urgent');
+ for(const txName of V30_URGENT_TX){if(required.has(txName)&&!done(txName))return task('treatment',txName,'urgent')}
+ // Immediate comfort care when clinically indicated.
+ if(p.pain>=5&&required.has('Analgesia')&&!done('Analgesia'))return task('treatment','Analgesia','pain');
+ if(p.temp>=38&&required.has('Antipyretic')&&!done('Antipyretic'))return task('treatment','Antipyretic','fever');
+ if(required.has('Antiemetic')&&!done('Antiemetic'))return task('treatment','Antiemetic','nausea');
+ // The hypothyroidism hint must ask for TFT confirmation before Thyroxine.
+ if(dx.includes(V30_HYPO)&&!v29TestDone(p,'TFT')){
+  const ordered=(p.tests||[]).some(t=>t.n==='TFT');
+  return task(ordered?'pending':'test','TFT','essential');
+ }
+ // Remaining mandatory treatment: no names invented outside the treatment UI.
+ const next=[...required].find(n=>therapies.includes(n)&&!done(n));
+ if(next)return task('treatment',next,'required');
+ // Core tests are alternatives. An ordered but not-yet-ready test is NOT re-ordered.
+ const group=v27RequiredGroups(p);
+ const available=new Set([...bloodTests,...imagingTests,...quickTests,...quickV4,'BGL & Ketones','Bladder Scan']);
+ for(const alternatives of group){
+  if(v27FindCompletedTest(p,alternatives))continue;
+  const ordered=(p.tests||[]).some(t=>alternatives.some(n=>t.n===n||t.n==='Emergency CT:'+n));
+  if(!ordered){const candidate=alternatives.find(n=>available.has(n));if(candidate)return task('test',candidate,'essential')}
+ }
+ // Once mandatory tests and treatments are complete, direct the player to
+ // disposition instead of suggesting optional history or examinations.
+ const requiredReady=[...required].every(n=>done(n));
+ const studiesReady=group.every(options=>!!v27FindCompletedTest(p,options));
+ if(requiredReady&&studiesReady){
+  const gp=v29AssessGP(p);
+  if(gp.ok)return task('direction','GP');
+  const neuroMissing=gp.reasons?.some(r=>r.includes('Neuro Obs'));
+  if(!neuroMissing){const ref=dx.map(d=>referKeys[d]?.find(k=>k!=='GP')).find(Boolean);
+   if(ref)return task('direction',ref);
+  }
+ }
+ // Disease-specific examinations and history are offered only if available.
+ const exam=dx.map(d=>V14_HINT_EXAMS[d]).find(n=>n&&exams.includes(n)&&!(p.exams||[]).includes(n));
+ if(exam)return task('exam',exam);
+ const choice=dx.map(d=>V14_HINT_Q[d]).find(n=>n&&!(p.asked||[]).includes(n));
+ const basic=['assoc','risk','onset','trigger'].find(n=>!(p.asked||[]).includes(n));
+ const qKey=choice&&['onset','assoc','risk','trigger','previous'].includes(choice)?choice:basic;
+ if(qKey&&(p.q||0)<5)return task('question',qKey);
+ const waiting=(p.tests||[]).find(t=>!t.ready&&t.readyAt>s.time);
+ if(waiting)return task('pending',waiting.n);
+ if(v29AssessGP(p).ok)return task('direction','GP');
+ const speciality=dx.map(d=>referKeys[d]?.find(k=>k!=='GP')).find(Boolean);
+ if(speciality)return task('direction',speciality);
+ return task('review','');
+}
+const V30_HINT_REASONS={
+ 'Antibiotics':'감염의 원인을 통제할 치료가 충분히 시작됐을까?',
+ 'Analgesia':'통증 때문에 심박수와 환자 불편감이 높아질 수도 있겠어.',
+ 'Antipyretic':'높은 체온이 환자의 생리적 부담과 불편감에 주는 영향을 생각해 봐.',
+ 'IV fluids':'순환 혈액량과 장기 관류가 충분한지 확인해 봐.',
+ 'Oxygen therapy':'현재 산소화 상태를 그냥 지켜봐도 괜찮을까?',
+ 'Thyroxine':'호르몬 결핍이 확인됐다면 장기적인 보충 계획까지 세웠을까?',
+ 'Bronchodilator':'기도 폐쇄를 완화할 치료가 충분한지 검토해 봐.',
+ 'Anaphylaxis treatment':'기도와 순환이 동시에 위협받는 상황에서 원인 치료가 늦지 않았을까?',
+ 'Glucose replacement':'이 의식 변화가 가역적인 대사 문제일 수 있겠어.',
+ 'Insulin pathway':'이 혈당과 케톤 상태를 교정할 핵심 치료가 누락되지 않았을까?',
+ 'Antiemetic':'구토와 탈수 악화 위험을 어떻게 줄일 수 있을까?',
+ 'NGT Placement':'장 팽만과 구토의 압력을 실제로 줄일 방법을 고려했을까?',
+ 'IDC Insertion':'배출되지 못한 소변이 통증과 문제의 원인이라면?',
+ 'Antiepileptic':'재발과 지속적인 발작을 막을 치료 계획이 충분할까?'
+};
+function v30HintText(p,t,mode){
+ if(t.type==='treatment'){
+  const name=t.name,korean=tx[name]||name;
+  if(mode==='beginner')return `현재 빠진 처치가 있어요. “${korean}”을 시행해 보세요.`;
+  if(mode==='intermediate')return t.context==='pain'?'현재 통증 조절을 먼저 검토해 보세요.':t.context==='fever'?'발열에 대한 증상 조절을 고려해 보세요.':`현재 상태에서 필요한 ${['IV fluids','Oxygen therapy','NGT Placement','IDC Insertion'].includes(name)?'안정화 처치':'약물 치료'}를 다시 확인해 보세요. ${name==='Thyroxine'?'내분비 원인에 맞는 보충 치료가 필요해요.':''}`;
+  return V30_HINT_REASONS[name]||`지금까지의 치료가 이 환자의 주요 병태생리를 충분히 다뤘을까?`;
+ }
+ if(t.type==='test'){
+  if(mode==='beginner')return `아직 필요한 검사가 있어요. “${labelTest(t.name)}” 검사를 주문해 보세요.`;
+  if(mode==='intermediate')return `진단을 확인하기 위한 ${['TFT','UEC','FBE','VBG','Troponin','Lipase'].includes(t.name)?'혈액검사':'핵심 검사'}가 빠져 있어요. 관련 검사 항목을 검토해 보세요.`;
+  const m={'TFT':'추위 민감성, 피로, 서맥의 원인을 한 번에 설명할 수 있는 호르몬 이상은?',
+   'ECG':'이 증상의 원인이 전기적·허혈성 심장 문제인지 객관적으로 확인했을까?',
+   'CTPA':'폐혈관 내부의 폐색 가능성을 충분히 확인했을까?',
+   'CT Abdomen/Pelvis':'복부의 구조적 원인을 영상으로 확인해야 하지 않을까?',
+   'Chest X-ray':'흉부의 구조적 이상이나 침윤을 영상으로 확인했을까?',
+   'BGL & Ketones':'의식 변화나 전신 증상을 설명할 대사적 이상을 배제했을까?'};
+  return m[t.name]||'현재 감별진단을 뒷받침할 객관적 검사가 충분한지 살펴봐.';
+ }
+ if(t.type==='exam')return mode==='beginner'?`“${t.name}”을 시행해 보세요.`:mode==='intermediate'?'증상에 맞는 신체검사 소견을 아직 확인하지 않았어요.':`직접 진찰해서 확인해야 할 중요한 소견이 남아 있지 않을까?`;
+ if(t.type==='question'){
+  const all=[...baseQuestions,...V10_EXTRA_QUESTIONS];const q=all.find(x=>x[0]===t.name)?.[1]||'동반 증상과 위험 인자';
+  return mode==='beginner'?`환자에게 “${q}”라고 문진해 보세요.`:mode==='intermediate'?'증상의 시작과 동반 증상, 기저질환을 더 구체적으로 확인해 보세요.':'아직 듣지 못한 병력 중 진단의 확률을 바꿀 정보가 있을까?';
+ }
+ if(t.type==='pending')return mode==='expert'?'결론을 내리기 전 아직 확인되지 않은 객관적 정보가 있지 않을까?':`“${labelTest(t.name)}” 검사 결과가 아직 도착하지 않았어요. 중복 주문하지 말고 기다리는 동안 상태를 재평가하세요.`;
+ if(t.type==='direction')return mode==='beginner'?t.name==='GP'?'현재 조건을 확인하고 GP Follow-up 퇴원을 고려해 보세요.':`치료 후 “${teams[t.name]||t.name}” 의뢰를 검토해 보세요.`:mode==='intermediate'?'필수 처치 이후 퇴원 가능 여부와 전문과 의뢰 필요성을 판단해 보세요.':'현재 안정화와 근본적 치료가 같은 의미일까? 이 환자에게 적절한 다음 진료 장소는?';
+ return '현재 결과와 바이탈을 재평가하고, 이후 진료 방향을 판단해 보세요.';
+}
+consultSenior=function(){const p=cur();if(!p)return;
+ p.hints=(p.hints||0)+1;
+ if(p.hints>=3)s.rep-=2;
+ if(p.hints>=5)s.rep-=4;
+ const mode=p.v22Mode||v22Difficulty(),task=v30HintTask(p),msg=v30HintText(p,task,mode);
+ show(`<h2>🩺 상급자 조언 · ${mode==='beginner'?'초보자 행동 안내':mode==='intermediate'?'중급자 방향 제시':'전문가 임상 단서'}</h2><p class="hintbox">${v10Esc(msg)}</p><p class="muted">이번 힌트로 최종 점수 −8점. 누적 ${p.hints}회${p.hints>=3?' · 반복 이용으로 평판 하락':''}.</p><button class="primary" onclick="hide()">진료 계속</button>`);
+ render();
+};
+
+// Optional v29 → v30 migration: v29 remains intact.
+function v30ImportV29(){const raw=localStorage.getItem('ed-v29-ko');if(!raw)return;
+ if(!confirm('기존 v29 한국어판 진행 상황을 v30으로 복사할까요? v29 저장은 유지됩니다.'))return;
+ try{s=JSON.parse(raw);s.queue??=[];s.v22Started=true;s.v30Version=V30_VERSION;
+  for(const p of s.queue)augmentPatient(p);
+  v7InitState();v21Init();$('v22Setup')?.remove();s.speed=s.ended?0:1;render();v22Persist();
+  pushV6Notice('v29 저장 데이터를 v30으로 복사했습니다. v29 저장은 유지됩니다.');
+ }catch(err){alert('v29 저장 불러오기 실패: '+err.message)}
+}
+const v30OldBoot=v22Boot;
+v22Boot=function(){v30OldBoot();const setup=$('v22Setup'),label=$('v27VersionTag');
+ if(label)label.textContent='v30.0 · Condition 밸런스 · 단계별 상급자 힌트 · Hypothyroidism · 약물 재투여';
+ const h=setup?.querySelector('h1');if(h)h.textContent='🏥 ED Simulator v30';
+ const actions=setup?.querySelector('.v22-actions');
+ if(actions&&localStorage.getItem('ed-v29-ko')&&!setup.querySelector('#v30ImportV29'))
+  actions.insertAdjacentHTML('afterbegin','<button id="v30ImportV29" onclick="v30ImportV29()">기존 v29 한글판 저장 가져오기</button>');
+ if(setup){const modes=setup.querySelectorAll('.v22-mode small');
+  if(modes[0])modes[0].innerHTML=modes[0].innerHTML.replace(/진단\s*\d+개/,`진단 ${V22_BEGINNER.length}개`);
+  if(modes[1])modes[1].innerHTML=modes[1].innerHTML.replace(/진단\s*\d+개/,`진단 ${V22_INTERMEDIATE.length}개`);
+ }
+};
+const v30OldHeader=renderHeader;
+renderHeader=function(){v30OldHeader();const label=document.querySelector('header .brand .v27-brand-version');
+ if(label)label.textContent='v30.0';document.title='Emergency Doctor Simulator · v31.0 (한국어)';
+};
+
 // First launch waits for explicit character creation; the simulation never runs behind setup.
+/* =====================================================================
+   Emergency Doctor Simulator v31 · Korean · offline integrated patch
+   Clinical simplifications are game rules, NOT treatment recommendations.
+   ===================================================================== */
+const V31_VERSION='31.0';
+// Keep v30 autosaves untouched: v31 gets its own independent storage.
+// Internal treatment keys are stable for backward compatibility; only human-visible names change.
+const V31_RENAMES={
+ 'Antiplatelet pathway':['항혈소판제 치료','Antiplatelet Therapy'],
+ 'Arrhythmia pathway':['부정맥 치료','Arrhythmia Management'],
+ 'Pneumothorax pathway':['흉막 감압','Pleural Decompression'],
+ 'Stroke pathway':['급성 뇌졸중 치료','Acute Stroke Management'],
+ 'Seizure pathway':['경련 치료','Antiseizure Treatment'],
+ 'Blood transfusion pathway':['수혈','Blood Transfusion'],
+ 'Insulin pathway':['인슐린 치료','Insulin Therapy'],
+ 'Diuretic pathway':['이뇨제 치료','Diuretic Therapy'],
+ 'Hyperkalemia pathway':['고칼륨혈증 치료','Hyperkalaemia Treatment'],
+ 'Hypoglycaemic agent':['경구 혈당강하제','Oral Antidiabetic Medication']
+};
+for(const [key,labels] of Object.entries(V31_RENAMES))tx[key]=`${labels[0]} (${labels[1]})`;
+for(const key of ['Urinary analgesic','Antidiarrhoeal','Urgent spinal assessment']){
+ const i=therapies.indexOf(key);if(i>=0)therapies.splice(i,1);
+ for(const arr of [V20_MED_ORDER,V20_PROC_ORDER]){const j=arr.indexOf(key);if(j>=0)arr.splice(j,1)}
+ V10_PROCEDURES.delete(key);
+}
+tx['Nasal Haemostasis']='비강 지혈 (Nasal Haemostasis)';
+if(!therapies.includes('Nasal Haemostasis'))therapies.push('Nasal Haemostasis');
+V10_PROCEDURES.add('Nasal Haemostasis');
+if(!V20_PROC_ORDER.includes('Nasal Haemostasis'))V20_PROC_ORDER.splice(3,0,'Nasal Haemostasis');
+// Keep English internal keys in existing treatment data, but never show obsolete Pathway terminology.
+const v31OldMedicationMenu=v10OpenMedication;
+v10OpenMedication=function(kind){v31OldMedicationMenu(kind);
+ const root=$('v10OptionGrid');if(!root)return;
+ for(const label of root.querySelectorAll('label.v10-pop-choice')){
+  const key=label.querySelector('input.v10-med-check')?.value;
+  if(!key||!V31_RENAMES[key])continue;
+  const sm=label.querySelector('small');if(sm)sm.textContent=V31_RENAMES[key][1]+(label.classList.contains('checked')?' · 시행 완료':'');
+  label.dataset.search=`${V31_RENAMES[key].join(' ')} ${tx[key]}`.toLowerCase();
+ }
+};
+
+// 6 new diagnoses. Existing internal case structure and scoring hooks are retained.
+const V31_NEW_CASES=[
+ ['Febrile Neutropenia','Infectious','Fever after chemotherapy','Haematology','FBE, Blood cultures, UEC, CRP','Prompt IV antibiotics and urgent Haematology review','Recent chemotherapy, fever and shivering, infection risk'],
+ ['Sickle Cell Crisis','Other','Severe limb and back pain','Haematology','FBE, UEC','Strong analgesia and Haematology review','Known sickle cell disease, severe bone and back pain'],
+ ['Testicular Torsion','Renal','Sudden testicular pain','Urology','Clinical examination, USS Scrotum Doppler if no referral delay','Immediate Urology review, analgesia','Acute unilateral testicular pain, nausea, high-riding testis'],
+ ['Ovarian Torsion','Other','Sudden unilateral pelvic pain','Gynaecology','Clinical examination, USS Pelvis Doppler if no referral delay','Immediate Gynaecology review, analgesia','Sudden unilateral pelvic pain, nausea and vomiting'],
+ ['Tonsillitis','Infectious','Sore throat and fever','ENT','Throat examination, FBE if indicated','Antibiotics for bacterial tonsillitis, analgesia if indicated','Painful swallowing, tonsillar swelling and exudate'],
+ ['Epistaxis','Other','Persistent nosebleed','ENT','FBE, Coagulation if indicated','Nasal Haemostasis and reassessment','Nosebleed, nasal blood visible, check haemodynamic stability']
+];
+for(const row of V31_NEW_CASES)if(!diseases.some(d=>d[0]===row[0]))diseases.push(row);
+// Nonplayable umbrella diagnosis keys remain only as old-data compatibility aliases.
+for(let i=diseases.length-1;i>=0;i--)if(['ACS','MI'].includes(diseases[i][0]))diseases.splice(i,1);
+for(const pool of [V22_BEGINNER,V22_INTERMEDIATE])for(let i=pool.length-1;i>=0;i--)if(['ACS','MI'].includes(pool[i]))pool.splice(i,1);
+for(const k of ['NSTEMI','Tonsillitis','Epistaxis'])if(!V22_BEGINNER.includes(k))V22_BEGINNER.push(k);
+for(const k of ['Febrile Neutropenia','Sickle Cell Crisis','Testicular Torsion','Ovarian Torsion'])if(!V22_INTERMEDIATE.includes(k))V22_INTERMEDIATE.push(k);
+for(const k of V22_BEGINNER)if(!V22_INTERMEDIATE.includes(k))V22_INTERMEDIATE.push(k);
+V22_MODES.beginner.max=V22_BEGINNER.length;V22_MODES.intermediate.max=V22_INTERMEDIATE.length;
+Object.assign(names,{
+ 'Febrile Neutropenia':'발열성 호중구감소증','Sickle Cell Crisis':'겸상적혈구 위기',
+ 'Testicular Torsion':'고환 염전','Ovarian Torsion':'난소 염전','Tonsillitis':'편도염','Epistaxis':'비출혈'
+});
+Object.assign(complaints,{
+ 'Fever after chemotherapy':'항암 치료 후 발열·오한','Severe limb and back pain':'심한 사지·허리 통증',
+ 'Sudden testicular pain':'갑작스러운 한쪽 고환 통증','Sudden unilateral pelvic pain':'갑작스러운 한쪽 골반 통증',
+ 'Sore throat and fever':'인후통·발열','Persistent nosebleed':'지속되는 코피'
+});
+Object.assign(symptomDescriptions,{
+ 'Febrile Neutropenia':'최근 항암치료를 받았는데 열과 오한이 생겼습니다.',
+ 'Sickle Cell Crisis':'겸상적혈구병이 있고 뼈와 허리 통증이 갑자기 심해졌습니다.',
+ 'Testicular Torsion':'갑자기 한쪽 고환이 매우 아프고 메스껍습니다.',
+ 'Ovarian Torsion':'갑자기 한쪽 하복부가 심하게 아프고 구역질이 납니다.',
+ 'Tonsillitis':'목이 아프고 침 삼키기가 어렵습니다.',
+ 'Epistaxis':'코에서 피가 계속 나와서 왔습니다.'
+});
+Object.assign(seniorClues,{
+ 'Febrile Neutropenia':'최근 항암치료와 절대 호중구 수를 확인하고 IV 항생제를 지연하지 마세요.',
+ 'Sickle Cell Crisis':'기저 겸상적혈구병과 통증 양상을 확인하세요. 단순 통증 위기에서는 수혈을 자동으로 요구하지 않습니다.',
+ 'Testicular Torsion':'갑작스러운 고환 통증은 시간 의존적인 비뇨기 응급상황입니다. USS 때문에 의뢰가 늦어지면 안 됩니다.',
+ 'Ovarian Torsion':'급성 편측 골반통과 난소 크기, 혈류를 보세요. Doppler 혈류가 남아도 염전을 배제할 수 없습니다.',
+ 'Tonsillitis':'인후 진찰, 발열과 통증을 확인하고 세균성 편도염의 치료와 퇴원 가능성을 판단하세요.',
+ 'Epistaxis':'지혈 처치 여부와 Hb, 환자 상태를 재평가하세요.'
+});
+Object.assign(appropriateTx,{
+ 'Febrile Neutropenia':['Antibiotics'],
+ 'Sickle Cell Crisis':['Analgesia'],
+ 'Testicular Torsion':['Analgesia'],
+ 'Ovarian Torsion':['Analgesia'],
+ 'Tonsillitis':['Antibiotics'],
+ 'Epistaxis':['Nasal Haemostasis']
+});
+// The oncology specialty is deliberately NOT included.
+Object.assign(teams,{'Haematology':'혈액내과','ENT':'이비인후과'});
+const V31_REFERRALS={
+ 'STEMI':['Cardiology'],'NSTEMI':['Cardiology'],'Unstable Angina':['Cardiology'],
+ 'Atrial Fibrillation':['Cardiology'],'SVT':['Cardiology'],'Heart Failure':['Cardiology'],
+ 'Pulmonary Oedema':['Cardiology'],'Pericarditis':['Cardiology'],
+ 'Asthma':['Respiratory'],'COPD Exacerbation':['Respiratory'],'Pneumonia':['Respiratory'],
+ 'Pulmonary Embolism':['Respiratory'],'Respiratory Acidosis':['Respiratory'],
+ 'Seizure':['Neurology'],'Migraine':['Neurology'],'Parkinson Disease':['Neurology'],'Meningitis':['Neurology'],
+ 'Stroke':['Stroke'],'Intracranial Haemorrhage':['Neurosurgery'],'Cauda Equina Syndrome':['Neurosurgery'],
+ 'Appendicitis':['General Surgery'],'Cholecystitis':['General Surgery'],'Bowel Obstruction':['General Surgery'],
+ 'Pancreatitis':['Gastroenterology'],'GI Bleeding':['Gastroenterology'],'Diverticulitis':['Gastroenterology'],
+ 'Gastroenteritis':['Gastroenterology','General Medicine'],
+ 'DKA':['Endocrinology'],'HHS':['Endocrinology'],'Hyperglycaemia':['Endocrinology'],'Hypothyroidism':['Endocrinology'],
+ 'Acute Kidney Injury':['Renal'],'Pyelonephritis':['Renal'],
+ 'Renal Colic':['Urology'],'Acute Urinary Retention':['Urology'],'Testicular Torsion':['Urology'],
+ 'DVT':['Vascular'],'Pneumothorax':['Cardiothoracic'],'Aortic Dissection':['Cardiothoracic'],
+ 'Fracture':['Orthopaedics'],'Ectopic Pregnancy':['Gynaecology'],'Ovarian Torsion':['Gynaecology'],
+ 'Hypoglycaemia':['General Medicine'],'UTI':['General Medicine'],'Sepsis':['General Medicine'],
+ 'Cellulitis':['General Medicine'],'Hypertension':['General Medicine'],'Constipation':['General Medicine'],
+ 'Syncope':['General Medicine'],'Hyperkalemia':['General Medicine'],'Hypokalemia':['General Medicine'],
+ 'Anaphylaxis':['Resus / ED senior'],
+ 'Febrile Neutropenia':['Haematology'],'Sickle Cell Crisis':['Haematology'],
+ 'Tonsillitis':['ENT'],'Epistaxis':['ENT']
+};
+for(const [d,refs] of Object.entries(V31_REFERRALS))referKeys[d]=[...refs];
+// No orphan case may silently fall through to the blanket General Medicine specialty.
+const V31_UNMAPPED=diseases.map(row=>row[0]).filter(n=>!referKeys[n]?.length);
+if(V31_UNMAPPED.length)console.warn('v31 referral map needs attention:',V31_UNMAPPED);
+const V31_ICU_ELIGIBLE=new Set(['STEMI','NSTEMI','Unstable Angina','Heart Failure','Pulmonary Oedema','Aortic Dissection','Pulmonary Embolism','Respiratory Acidosis','Pneumothorax','Stroke','Intracranial Haemorrhage','Seizure','Meningitis','DKA','HHS','GI Bleeding','Sepsis','Anaphylaxis','Ectopic Pregnancy','Acute Kidney Injury','Febrile Neutropenia']);
+const v31PreviousReferralAllowed=v27ReferralAllowed;
+v27ReferralAllowed=function(p,mode,ref){
+ if(mode==='discharge')return v29AssessGP(p).ok;
+ const dx=v29Dx(p);
+ if(mode==='refer')return dx.some(d=>(V31_REFERRALS[d]||referKeys[d]||[]).includes(ref));
+ if(mode==='icu')return dx.some(d=>V31_ICU_ELIGIBLE.has(d)) && (v29CrisisActive(p)||p.condition<=40||p.sbp<85||p.gcs<=8||p.spo2<85);
+ return v31PreviousReferralAllowed(p,mode,ref);
+};
+// When presenting GP-eligible illnesses, accept specialist referral too.
+V29_GP_SPECIAL.add('Tonsillitis');V29_GP_SPECIAL.add('Epistaxis');
+const v31PrevAssessOne=v29AssessOne;
+v29AssessOne=function(p,d){const reasons=v31PrevAssessOne(p,d);
+ if(d==='Tonsillitis'&&!v29Done(p,'Antibiotics'))reasons.push('항생제 치료 미완료');
+ if(d==='Epistaxis'){
+  if(!v29Done(p,'Nasal Haemostasis'))reasons.push('비강 지혈 처치 미완료');
+  if(Number(p.v31Hb??137)<90)reasons.push(`Hb ${p.v31Hb} g/L (퇴원 기준 ≥90)`);
+ }
+ return reasons;
+};
+
+// Laboratory consolidation. Group & Hold is the only blood bank test.
+const V31_DROP_TESTS=new Set(['Amylase','ESR','Crossmatch']);
+for(const arr of [blood,bloodTests])for(let i=arr.length-1;i>=0;i--)if(V31_DROP_TESTS.has(Array.isArray(arr[i])?arr[i][0]:arr[i]))arr.splice(i,1);
+testKorean['Group & Hold']='혈액형 검사·혈액 확보';labEn['Group & Hold']='G&H';testKo['Group & Hold']='G&H';
+// New ultrasound and clinically linked results.
+if(!imagingTests.includes('USS Scrotum'))imagingTests.push('USS Scrotum');
+if(!imaging.some(v=>v[0]==='USS Scrotum'))imaging.push(['USS Scrotum',-7]);
+if(!V26_MODALITIES.us.items.includes('USS Scrotum'))V26_MODALITIES.us.items.push('USS Scrotum');
+testKorean['USS Scrotum']='음낭 도플러 초음파';labEn['USS Scrotum']='USS Scrotum (Doppler)';testKo['USS Scrotum']='음낭 도플러 USS';
+Object.assign(V22_DIAG_IMAGES,{
+ 'Testicular Torsion':{uss:'USS Scrotum'}, 'Ovarian Torsion':{uss:'USS Pelvis'},
+ 'Cauda Equina Syndrome':{mri:'MRI Spine'},'Febrile Neutropenia':{},
+ 'Sickle Cell Crisis':{},'Tonsillitis':{},'Epistaxis':{}
+});
+Object.assign(V22_BLOOD_ADDITIONS,{'Febrile Neutropenia':['FBE','CRP'],'Sickle Cell Crisis':['FBE'],'Epistaxis':['FBE','Coagulation']});
+Object.assign(V27_ESSENTIAL_TESTS,{
+ 'Febrile Neutropenia':[['FBE']], 'Sickle Cell Crisis':[['FBE']],
+ 'Testicular Torsion':[], 'Ovarian Torsion':[], 'Tonsillitis':[], 'Epistaxis':[]
+});
+Object.assign(V14_HINT_TESTS,{'Febrile Neutropenia':['FBE','Blood cultures'],'Sickle Cell Crisis':['FBE'], 'Testicular Torsion':['USS Scrotum'], 'Ovarian Torsion':['USS Pelvis'],'Epistaxis':['FBE']});
+Object.assign(V14_HINT_EXAMS,{'Testicular Torsion':'복부 진찰','Ovarian Torsion':'복부 진찰','Tonsillitis':'피부·상처 진찰 (Skin / Wound Exam)','Epistaxis':'피부·상처 진찰 (Skin / Wound Exam)'});
+Object.assign(V27_FIRST_ACTION,{
+ 'Febrile Neutropenia':['tx:Antibiotics','test:FBE','test:Blood cultures'],
+ 'Sickle Cell Crisis':['tx:Analgesia','test:FBE'],
+ 'Testicular Torsion':['exam:복부 진찰','test:Emergency USS:USS Scrotum'],
+ 'Ovarian Torsion':['exam:복부 진찰','test:Emergency USS:USS Pelvis'],
+ 'Tonsillitis':['tx:Antibiotics'], 'Epistaxis':['tx:Nasal Haemostasis'],
+ 'Cauda Equina Syndrome':['test:Emergency MRI:MRI Spine','test:MRI Spine','exam:신경근육계 진찰']
+});
+// Do not include Wound Swab in mandatory care or automatically reward it for cellulitis.
+const v31PrevRelevant=v10RelevantTest;
+function v31BaseImaging(n){return String(n).replace(/^Emergency (?:CT|MRI|USS):/,'')}
+v10RelevantTest=function(p,n){const t=v31BaseImaging(n),dx=v29Dx(p),has=d=>dx.includes(d);
+ if(t==='Wound Swab')return false; // future extension (MacGuffin)
+ if(t==='Fecal MCS')return has('Gastroenteritis');
+ if(t==='USS Scrotum')return has('Testicular Torsion');
+ if(t==='USS Pelvis'&&has('Ovarian Torsion'))return true;
+ if(t==='MRI Spine'&&has('Cauda Equina Syndrome'))return true;
+ if(t==='Blood cultures'&&has('Febrile Neutropenia'))return true;
+ if(t==='FBE'&&['Febrile Neutropenia','Sickle Cell Crisis','Epistaxis'].some(has))return true;
+ if(t==='Coagulation'&&has('Epistaxis'))return true;
+ if(t==='Respiratory Swab'&&has('URTI'))return true;
+ if(t==='HbA1c'&&has('Hyperglycaemia'))return true;
+ return v31PrevRelevant(p,t);
+};
+const v31PrevRelevantExam=v16RelevantExam;
+v16RelevantExam=function(p,n){const dx=v29Dx(p);
+ if(['복부 진찰','신경근육계 진찰'].includes(n)&&dx.some(d=>['Testicular Torsion','Ovarian Torsion'].includes(d)))return true;
+ if(['피부·상처 진찰 (Skin / Wound Exam)','폐음 청진'].includes(n)&&dx.some(d=>['Tonsillitis','Epistaxis'].includes(d)))return true;
+ if(n==='복부 진찰'&&dx.includes('Sickle Cell Crisis'))return true;
+ return v31PrevRelevantExam(p,n);
+};
+// New clinical presentations: use established state and lab architecture.
+function v31InitPatient(p){if(!p||p.v31Ready)return p;p.v31Ready=true;
+ const dx=v29Dx(p),has=d=>dx.includes(d);
+ if(has('Febrile Neutropenia')){
+  p.v31Neutrophil=Number((.12+Math.random()*.34).toFixed(2));p.temp=Number((38.2+Math.random()*1.2).toFixed(1));p.hr=Math.max(98,p.hr);p.v10Symptoms.fever=true;p.v10TempAtArrival=p.temp;p.trueCat=p.sbp<90?1:2;p.cat=p.trueCat;p.condition=Math.min(82,p.condition);
+ }
+ if(has('Sickle Cell Crisis')){p.v31Hb=[66,72,78,84,90,96][Math.floor(Math.random()*6)];p.v31BaselineHb=78;p.pain=Math.max(7,p.pain);p.v10PainAtArrival=p.pain;p.trueCat=2+Math.floor(Math.random()*2);p.cat=p.trueCat;}
+ if(has('Testicular Torsion')){p.sex='남성';p.name=pick(['김민준','이서준','박지훈','최도윤','정현우','강지호','윤하준','송지후','오민재','권태현']);p.age=Math.min(40,p.age);p.pain=Math.max(8,p.pain);p.v10PainAtArrival=p.pain;p.trueCat=2;p.cat=2;p.v10Symptoms.nausea=true;}
+ if(has('Ovarian Torsion')){p.sex='여성';p.name=pick(['한지민','김서연','이지은','박수빈','최하은','정유진','강민서','윤지아','한서윤','임수아']);p.age=Math.min(48,p.age);p.pain=Math.max(7,p.pain);p.v10PainAtArrival=p.pain;p.trueCat=2;p.cat=2;p.v10Symptoms.nausea=true;}
+ if(has('Tonsillitis')){p.temp=Number((37.8+Math.random()*.9).toFixed(1));p.v10TempAtArrival=p.temp;p.v10Symptoms.fever=p.temp>=38;p.pain=Math.max(5,p.pain);p.v10PainAtArrival=p.pain;p.trueCat=4;p.cat=4;}
+ if(has('Epistaxis')){p.v31Hb=[78,88,92,104,118,133,140][Math.floor(Math.random()*7)];p.pain=Math.min(4,p.pain);p.v10PainAtArrival=p.pain;p.trueCat=p.v31Hb<90?2:Math.random()<.4?3:4;p.cat=p.trueCat;}
+ if(has('Hyperglycaemia')&&!has('DKA')&&!has('HHS')){p.v31HbA1c=pick([55,63,72,85]);}
+ if(has('URTI')){
+  p.v20Virus??=pick(['Influenza A','Influenza B','SARS-CoV-2','Rhinovirus',null]);
+  const risks=['COPD','만성 심장질환','당뇨병','만성 신장질환','면역저하','임신'];
+  if(p.age<65 && Math.random()<.25)p.v31RiskCondition=pick(risks);
+ }
+ p.v31HighRisk=p.age>=65||!!p.v31RiskCondition||(p.v13PMH||[]).some(x=>/diabet|당뇨|copd|asthma|ckd|renal|kidney|면역저하|항암|immun|heart failure|심부전/i.test(String(x)))||has('Febrile Neutropenia');
+ if(has('URTI'))p.v20AntiviralIndicated=['Influenza A','Influenza B','SARS-CoV-2'].includes(p.v20Virus)&&p.v31HighRisk;
+ // Existing clinical system remains authoritative for crisis state, vitals and condition.
+ return p;
+}
+const v31OldPatient=patient;
+patient=function(){const p=v31InitPatient(v31OldPatient());
+ if(p){(s.v31RecentDx??=[]).push(p.d);if(s.v31RecentDx.length>5)s.v31RecentDx.shift()}
+ return p;
+};
+const v31OldAugment=augmentPatient;
+augmentPatient=function(p){return v31InitPatient(v31OldAugment(p))};
+const v31OldAnswer=answer;
+answer=function(p,key){if(!p)return '';
+ const has=d=>v29Dx(p).includes(d);
+ if(key==='risk'||key==='meds'){
+  if(has('Febrile Neutropenia'))return '최근 항암치료를 받았습니다. 감염에 취약하다는 말을 들었어요.';
+  if(has('Sickle Cell Crisis'))return '어릴 때부터 겸상적혈구병을 진단받았습니다. 이전에도 통증 발작이 있었어요.';
+  if(has('URTI'))return `기저질환: ${p.v31RiskCondition||((p.v13PMH||[]).join(', ')||'특이 병력 없음')}. ${p.age>=65?'고령 환자입니다.':''}`;
+ }
+ if(['assoc','onset','assocDetail','pain'].includes(key)){
+  if(has('Testicular Torsion'))return '갑자기 한쪽 고환이 심하게 아프고 올라가 있는 느낌입니다. 속이 메스껍습니다.';
+  if(has('Ovarian Torsion'))return '갑자기 한쪽 골반이 심하게 아프고 구역질이 납니다.';
+  if(has('Tonsillitis'))return '목이 붓고 침 삼킬 때 아픕니다. 편도가 하얗게 보였어요.';
+  if(has('Epistaxis'))return '코에서 피가 반복적으로 흐릅니다. 부딪힌 기억은 없습니다.';
+  if(has('Sickle Cell Crisis'))return '팔과 다리, 허리뼈가 아픕니다. 평소 통증 발작과 비슷합니다.';
+ }
+ return v31OldAnswer(p,key);
+};
+const v31OldExamResult=examResult;
+examResult=function(p,x){const dx=v29Dx(p),has=d=>dx.includes(d);
+ if(x==='피부·상처 진찰 (Skin / Wound Exam)'&&has('Tonsillitis'))return '인후: 편도 비대, 발적, 편도 삼출물과 경부 림프절 압통. 기도 폐쇄 소견은 없습니다.';
+ if(x==='피부·상처 진찰 (Skin / Wound Exam)'&&has('Epistaxis'))return '전비강에서 출혈점을 확인했습니다. 비강 내 출혈 소견.';
+ if(x==='복부 진찰'&&has('Ovarian Torsion'))return '한쪽 하복부 압통. 복막 자극 증상은 뚜렷하지 않을 수 있습니다.';
+ if(x==='복부 진찰'&&has('Testicular Torsion'))return '한쪽 고환 압통·고위 위치·cremasteric reflex 감소 의심. 긴급 비뇨기과 평가 필요.';
+ return v31OldExamResult(p,x);
+};
+const v31PrevTestResult=testResult;
+testResult=function(p,name){const n=v31BaseImaging(name),dx=v29Dx(p),has=d=>dx.includes(d);
+ if(n==='USS Scrotum')return has('Testicular Torsion')?'편측 고환 혈류 감소 또는 소실, 정삭 꼬임 소견 (whirlpool sign). 고환 염전 의심.':'고환 혈류 대칭. 급성 염전 시사 소견 없음.';
+ if(n==='USS Pelvis'&&has('Ovarian Torsion'))return '편측 난소 비대·기질 부종, 난포 주변 배열. Doppler 혈류 감소 가능. 혈류가 남아도 난소 염전을 배제할 수 없음.';
+ if(n==='MRI Spine'&&has('Cauda Equina Syndrome'))return '요추 중심부의 큰 추간판 탈출로 마미신경 다발 압박 확인. 긴급 신경외과 평가가 필요합니다.';
+ let data=v31PrevTestResult(p,n);
+ if(n==='HbA1c'&&has('Hyperglycaemia')){const val=Number(p.v31HbA1c||65);data=[{label:'HbA1c',flag:'높음',text:`${val} mmol/mol`,detail:'만성 고혈당 여부 판단'}]}
+ if(Array.isArray(data)){
+  data=data.map(row=>({...row}));
+  if(n==='FBE'){
+   const infl=has('Febrile Neutropenia'),wcc=infl?1.2:has('Tonsillitis')?15.2:has('Sickle Cell Crisis')?11.4:null;
+   if(wcc!==null){data=data.map(r=>/WCC|백혈구/i.test(r.label)?calcLab(r.label,wcc,4,11,'×10⁹/L',1):r)}
+   if(has('Epistaxis')||has('Sickle Cell Crisis'))data=data.map(r=>/Haemoglobin|Hb|헤모글로빈/i.test(r.label)?calcLab(r.label,p.v31Hb,115,165,'g/L',0):r);
+   if(!data.some(r=>/Neutrophil/i.test(r.label)))data.push(calcLab('Neutrophil',infl?p.v31Neutrophil:has('Tonsillitis')?12.4:has('Sickle Cell Crisis')?7.8:4.8,1.5,7.5,'×10⁹/L',2));
+  }
+  if(n==='UEC'){
+   const hco=Number(has('DKA')?p.v21Dka?.hco3:has('Respiratory Acidosis')?p.v20AcidProfile?.hco3:has('Sepsis')?18:has('COPD Exacerbation')?31:24);
+   const cl=has('DKA')?96:has('Sepsis')?105:103;
+   if(!data.some(r=>/Chloride|염소/i.test(r.label)))data.push(calcLab('Chloride',cl,98,107,'mmol/L',0));
+   if(!data.some(r=>/Bicarbonate|HCO₃/i.test(r.label)))data.push(calcLab('Bicarbonate',Number.isFinite(hco)?hco:24,22,29,'mmol/L',1));
+  }
+  if(n==='LFT'&&!data.some(r=>/GGT/i.test(r.label)))data.push(calcLab('GGT',has('Cholecystitis')?142:31,7,60,'U/L',0));
+ }
+ return data;
+};
+// Use one Hb source across displayed VBG/FBE in bleeding cases.
+const v31TestResultConsistent=testResult;
+testResult=function(p,n){const actual=v31BaseImaging(n);const data=v31TestResultConsistent(p,n);
+ if(Array.isArray(data)&&['VBG','ABG'].includes(actual)&&(v29Has(p,'Epistaxis')||v29Has(p,'Sickle Cell Crisis')))
+  return data.map(r=>/^(Haemoglobin|Hb|헤모글로빈)$/i.test(String(r.label).trim())?calcLab(r.label,p.v31Hb,115,165,'g/L',0):r);
+ return data;
+};
+// New essential therapy logic and responsible use of blood glucose therapies.
+const v31PrevRequiredTx=v10RequiredTx;
+v10RequiredTx=function(p){const need=new Set(v31PrevRequiredTx(p)),dx=v29Dx(p),has=d=>dx.includes(d);
+ for(const key of ['Urinary analgesic','Antidiarrhoeal','Urgent spinal assessment'])need.delete(key);
+ if(has('Tonsillitis'))need.add('Antibiotics');
+ if(has('Epistaxis'))need.add('Nasal Haemostasis');
+ if(has('Febrile Neutropenia'))need.add('Antibiotics');
+ if(has('Sickle Cell Crisis'))need.add('Analgesia');
+ if(has('URTI')){
+  if(p.v20AntiviralIndicated)need.add('Antiviral');else need.delete('Antiviral');
+ }
+ if(has('Hyperglycaemia')&&!has('DKA')&&!has('HHS')){
+  const initial=Number(p.v16BglAtArrival??p.bgl);
+  need.delete('Insulin pathway');need.delete('Hypoglycaemic agent');
+  if(initial>=16)need.add('Insulin pathway');
+  else if(initial>=8&&Number(p.v31HbA1c??55)>=48)need.add('Hypoglycaemic agent');
+ }
+ return [...need];
+};
+const v31PrevReasonableTx=v27ReasonableTx;
+v27ReasonableTx=function(p,med){const dx=v29Dx(p),has=d=>dx.includes(d);
+ if(med==='Nasal Haemostasis')return has('Epistaxis');
+ if(med==='Antibiotics'&&['Febrile Neutropenia','Tonsillitis'].some(has))return true;
+ if(med==='Analgesia'&&['Sickle Cell Crisis','Testicular Torsion','Ovarian Torsion','Tonsillitis'].some(has))return true;
+ if(med==='Antiviral')return has('URTI')&&['Influenza A','Influenza B','SARS-CoV-2'].includes(p.v20Virus)&&p.v31HighRisk;
+ if(med==='Hypoglycaemic agent')return has('Hyperglycaemia')&&Number(p.v16BglAtArrival??p.bgl)<16;
+ if(med==='Insulin pathway')return dx.some(d=>['Hyperglycaemia','DKA','HHS'].includes(d));
+ return v31PrevReasonableTx(p,med);
+};
+// Minor treatment response and realistic optional analgesia (existing pain threshold still applies).
+const v31PrevGive=giveTreatment;
+giveTreatment=function(){const p=cur(),key=$('treat')?.value,was=p?.treatments?.includes(key);const out=v31PrevGive();
+ if(p&&!was&&p.treatments.includes(key)&&key==='Nasal Haemostasis'){
+  p.v31BleedControlled=true;p.condition=Math.max(p.condition,70);pushV6Notice('비강 지혈 완료 · Hb 및 전신 상태를 재평가하세요.');render();
+ }
+ return out;
+};
+// Antiviral indications: URI is an umbrella diagnosis including SARS-CoV-2 and influenza.
+// Risk info is communicated via existing history, without a new UI.
+
+// Emergency radiology: CT (existing) + MRI + Ultrasound, all instant, x2 unnecessary penalty.
+const V31_URGENT={
+ 'Intracranial Haemorrhage':new Set(['Emergency CT:CT Brain']),
+ 'Stroke':new Set(['Emergency CT:CT Brain']),
+ 'Aortic Dissection':new Set(['Emergency CT:CT Angiography']),
+ 'Cauda Equina Syndrome':new Set(['Emergency MRI:MRI Spine']),
+ 'Testicular Torsion':new Set(['Emergency USS:USS Scrotum']),
+ 'Ovarian Torsion':new Set(['Emergency USS:USS Pelvis'])
+};
+function v31IsUrgent(n){return /^Emergency (?:CT|MRI|USS):/.test(n)}
+function v31UrgentAppropriate(p,n){return v29Dx(p).some(d=>V31_URGENT[d]?.has(n))}
+const v31PriorDelay=delayFor;
+delayFor=function(n){if(v31IsUrgent(n))return 0;return v31PriorDelay(n)};
+const v31PriorPenalty=testPenalty;
+testPenalty=function(n){if(v31IsUrgent(n))return 2*v31PriorPenalty(v31BaseImaging(n));return v31PriorPenalty(n)};
+const v31PriorLabel=labelTest;
+labelTest=function(n){if(v31IsUrgent(n))return `응급 ${v31PriorLabel(v31BaseImaging(n))} · 즉시`;return v31PriorLabel(n)};
+const v31PriorCategory=v28ResultCategory;
+v28ResultCategory=function(n){return v31IsUrgent(n)?'image':v31PriorCategory(n)};
+const v31PriorAddOrder=addOrder;
+addOrder=function(n){const p=cur();if(!p)return;
+ const prior=(p.tests||[]).length;
+ if(v31IsUrgent(n)){
+  if(p.tests.some(t=>t.n===n))return;
+  const base=v31BaseImaging(n);
+  const at=s.time,record={n,orderedAt:at,readyAt:at,ready:true,cost:testPenalty(n),r:testResult(p,base)};
+  p.tests.push(record);v27Log(p,'test',n,at); // instant result; no simulated delay
+  return;
+ }
+ v31PriorAddOrder(n);
+};
+const v31PriorOrder=order;
+order=function(n){if(v31IsUrgent(n)){
+ const p=cur();if(!p)return;if(p.tests.some(t=>t.n===n)){pushV6Notice('이미 주문한 응급 검사입니다.');return}
+ addOrder(n);render();return;
+ }return v31PriorOrder(n)};
+const v31PriorCompleted=v27FindCompletedTest;
+v27FindCompletedTest=function(p,options){const found=v31PriorCompleted(p,options);if(found)return found;
+ return (p.tests||[]).find(t=>t.ready&&Number(t.readyAt??0)<=s.time&&options.some(n=>v31BaseImaging(t.n)===n))||null;
+};
+const v31PriorCompute=v27ComputeEvaluation;
+v27ComputeEvaluation=function(p,mode,ref,wrong,main,second){const result=v31PriorCompute(p,mode,ref,wrong,main,second);
+ const urgent=(p.tests||[]).filter(t=>!t.v26ScoringCopy&&!t.repeat&&v31IsUrgent(t.n));
+ const extraUrgent=urgent.filter(t=>!t.n.startsWith('Emergency CT:'));
+ // Legacy scorer adds MRI/USS urgent as normal irrelevant at the normal cost,
+ // because its CT-only exception is hardcoded. Undo that debit and apply x2.
+ const oldDebits=extraUrgent.filter(t=>!v10RelevantTest(p,t.n)).reduce((n,t)=>n+testPenalty(t.n),0);
+ const expectedExtra=extraUrgent.filter(t=>!v31UrgentAppropriate(p,t.n)).reduce((n,t)=>n+testPenalty(t.n),0);
+ // A clinically needed emergency test should not be charged even if its base is not listed as essential.
+ const ctNeededButLegacyCharged=urgent.filter(t=>t.n.startsWith('Emergency CT:')&&v31UrgentAppropriate(p,t.n)&&!V27_URGENT_CT[p.d]&& !v10RelevantTest(p,t.n)).reduce((n,t)=>n+20,0);
+ const unneededUrgent=extraUrgent.filter(t=>!v31UrgentAppropriate(p,t.n));
+ const existingCTWrong=result.urgent.filter(t=>!v31UrgentAppropriate(p,t.n));
+ const correctedCost=unneededUrgent.map(t=>({n:t.n,cost:testPenalty(t.n)}));
+ result.irrelevantRegular=result.irrelevantRegular.filter(t=>!v31IsUrgent(t.n));
+ result.testCosts=result.testCosts.filter(t=>!v31IsUrgent(t.n));
+ result.urgent=[...existingCTWrong,...unneededUrgent];
+ result.urgentCosts=[...existingCTWrong.map(t=>({n:t.n,cost:testPenalty(t.n)})),...correctedCost];
+ result.investigationPenalty=Math.max(0,result.investigationPenalty-oldDebits+expectedExtra-ctNeededButLegacyCharged);
+ result.efficiency=v27Clamp(30-result.investigationPenalty,0,30);
+ result.raw=v27Clamp(result.dx+result.direction+result.treatment+result.efficiency+result.speed+result.handoff-result.hints,0,130);
+ result.percent=Number((result.raw/130*100).toFixed(1));result.grade=v27Grade(result.percent);
+ result.xp=Math.max(0,Math.round((result.raw+result.complex+result.resus)*result.mult)-result.question);
+ return result;
+};
+function v31EmergencyImaging(kind){const p=cur();if(!p)return;
+ const mod=kind==='MRI'?'mri':'us',prefix=kind==='MRI'?'Emergency MRI:':'Emergency USS:';
+ const all=V26_MODALITIES[mod].items.filter(n=>imagingTests.includes(n)&&!p.tests.some(t=>t.n===prefix+n));
+ if(v22Difficulty()==='beginner'){
+  const expected=v29Dx(p).flatMap(d=>[...(V31_URGENT[d]||[])]).find(n=>n.startsWith(prefix));
+  const chosen=expected||prefix+(V22_DIAG_IMAGES[p.d]?.[kind==='MRI'?'mri':'uss']||all[0]);
+  if(chosen&&!p.tests.some(t=>t.n===chosen)){addOrder(chosen);render();pushV6Notice(labelTest(chosen)+' · 즉시 결과');}
+  return;
+ }
+ v10OpenModal(`🚨 Emergency ${kind==='MRI'?'MRI':'Ultrasound'} · 즉시 결과`,
+ `<p class="muted small">필요한 응급 검사만 감점이 없습니다. 불필요한 응급 ${kind==='MRI'?'MRI는 −40':'초음파는 −14'}점이며 일반 검사와 중복 감점하지 않습니다.</p><div id="v10OptionGrid" class="v10-pop-grid">${all.map(n=>`<label class="v10-pop-choice"><input class="v10-order-check" type="checkbox" value="${v10Esc(prefix+n)}"><b>🚨 ${v10Esc(labelTest(n))}</b><small>0분 · 불필요 시 −${testPenalty(prefix+n)}점</small></label>`).join('')||'<p>주문 가능한 검사가 없습니다.</p>'}</div>`,
+ '<button onclick="hide()">취소</button><button class="primary" onclick="v10PlaceOrders()">응급 검사 주문</button>');
+}
+const v31PrevImagingMenu=v26ImagingMenu;
+v26ImagingMenu=function(){v31PrevImagingMenu();const root=$('investigations');if(!root||!cur())return;
+ const group=root.querySelector('.v27-imaging-stack');if(!group)return;
+ for(const [type,korean,penalty] of [['MRI','Emergency MRI',40],['USS','Emergency Ultrasound',14]])
+  group.insertAdjacentHTML('beforeend',`<button class="v27-emergency-btn" type="button" onclick="v31EmergencyImaging('${type}')"><span class="v26-imaging-icon">🚨</span><span><b>${korean} · 즉시 판독</b><small>적절하면 0점 · 불필요하면 −${penalty}점 · 0분</small></span></button>`);
+};
+// Older V27 first-action and readiness rules accept urgent radiology equivalents.
+const v31PriorReady=v27ReadyTime;
+v27ReadyTime=function(p){return v31PriorReady(p)};
+// Remove unsupported claims that wound swab is routinely helpful for cellulitis.
+// Faecal MCS is a nonmandatory, appropriate Gastroenteritis investigation.
+
+// Severity, diagnosis-specific early-life outcomes, and readable CAT ranges.
+for(const name of ['Tonsillitis','Epistaxis','Sickle Cell Crisis'])V30_GROUPS.A.add(name);
+for(const name of ['Testicular Torsion','Ovarian Torsion','Febrile Neutropenia'])V30_GROUPS.C.add(name);
+V30_SPECIALIST_RECOVERY.add('Febrile Neutropenia');V30_SPECIALIST_RECOVERY.add('Sickle Cell Crisis');
+
+// Frequency-weighted but still random: category targets 30 / 30 / 25 / 12 / 3.
+const V31_FREQUENCY_GROUPS=[
+ {pct:30,ids:['URTI','UTI','Gastroenteritis','Constipation','Migraine','Tonsillitis']},
+ {pct:30,ids:['Asthma','Cellulitis','Renal Colic','Pneumonia','COPD Exacerbation','Syncope','Hyperglycaemia','Fracture','Hypertension','Hypoglycaemia','Acute Urinary Retention','Epistaxis']},
+ {pct:25,ids:['Appendicitis','Atrial Fibrillation','Heart Failure','GI Bleeding','Cholecystitis','Diverticulitis','DVT','Pyelonephritis','Pancreatitis','Bowel Obstruction','SVT','Pericarditis','Parkinson Disease','Acute Kidney Injury','Hypothyroidism','Hypokalemia','Hyperkalemia','Respiratory Acidosis','Unstable Angina','NSTEMI','Seizure','Pulmonary Oedema']},
+ {pct:12,ids:['DKA','Stroke','Meningitis','Testicular Torsion','Pulmonary Embolism','Intracranial Haemorrhage','Sepsis','HHS','Pneumothorax','STEMI','Ectopic Pregnancy','Febrile Neutropenia']},
+ {pct:3,ids:['Aortic Dissection','Sickle Cell Crisis','Ovarian Torsion','Cauda Equina Syndrome','Anaphylaxis']}
+];
+const V31_SET_ALL=new Set(V31_FREQUENCY_GROUPS.flatMap(x=>x.ids));
+const V31_FREQUENCY_UNMAPPED=diseases.map(x=>x[0]).filter(n=>!V31_SET_ALL.has(n));
+if(V31_FREQUENCY_UNMAPPED.length)console.warn('v31 rarity assignment missing:',V31_FREQUENCY_UNMAPPED);
+function v31PickDisease(){
+ const available=new Set(v22Allowed().filter(n=>n!=='ACS'&&n!=='MI'));
+ const groups=V31_FREQUENCY_GROUPS.map(g=>({...g,ids:g.ids.filter(n=>available.has(n))})).filter(g=>g.ids.length);
+ let sum=groups.reduce((a,b)=>a+b.pct,0),r=Math.random()*sum;
+ let group=groups[groups.length-1];for(const g of groups){r-=g.pct;if(r<0){group=g;break}}
+ const recent=s.v31RecentDx||[];
+ const weighted=group.ids.map(id=>({id,w:recent.at(-1)===id?.12:recent.includes(id)?.5:1}));
+ let rem=Math.random()*weighted.reduce((a,b)=>a+b.w,0);
+ let selected=weighted[weighted.length-1].id;
+ for(const {id,w} of weighted){rem-=w;if(rem<0){selected=id;break}}
+ return diseases.find(d=>d[0]===selected)||pick(diseases);
+}
+// v31PickDisease is called by legacyPatient() after surgical one-line modification.
+
+// Tutorial: fully Korean physical-examination text, without English terms.
+const v31TourExam=V24_TOUR.find(t=>t.title.includes('신체검사'));
+if(v31TourExam)v31TourExam.text='폐음 청진, 심음 청진, 신경학적 바이탈, 신경근육계 진찰, 복부 진찰, 말초 신경혈관 진찰, 직장수지검사, 피부·상처 진찰을 시행합니다. 청진기·펜라이트·반사망치·수술용 확대경·장갑으로 검사 시간을 단축할 수 있습니다.';
+const v31TourImaging=V24_TOUR.find(t=>t.title.includes('혈액·미생물·영상검사'));
+if(v31TourImaging)v31TourImaging.text='혈액검사, 미생물검사, 일반 영상검사를 선택할 수 있습니다. 응급 CT·응급 MRI·응급 초음파는 결과가 즉시 나오지만, 불필요한 응급 검사는 일반 검사보다 두 배 감점됩니다.';
+const v31TourTreatment=V24_TOUR.find(t=>t.title.includes('약물 및 처치'));
+if(v31TourTreatment)v31TourTreatment.text='약물·처치 메뉴에서 실제 치료를 선택하세요. 임상적으로 필요한 처치는 환자 상태와 진단에 따라 달라집니다. 필수 치료를 마친 후 상태를 재평가하고 적절한 의뢰 또는 퇴원을 결정합니다.';
+const v31PriorBoot=v22Boot;
+v22Boot=function(){v31PriorBoot();const setup=$('v22Setup');if(!setup)return;
+ const h=setup.querySelector('h1');if(h)h.textContent='🏥 ED Simulator v31';
+ const label=$('v27VersionTag');if(label){label.textContent='v31.0';label.style.display='none'} // remove patch-notes line below main-menu version
+ const nodes=setup.querySelectorAll('.v22-mode small');
+ for(const el of nodes)el.innerHTML=el.innerHTML.replace(/진단\s*\d+개/,`진단 ${el.closest('.v22-mode')===setup.querySelectorAll('.v22-mode')[0]?V22_BEGINNER.length:V22_INTERMEDIATE.length}개`);
+};
+const v31PriorRenderHeader=renderHeader;
+renderHeader=function(){v31PriorRenderHeader();const label=document.querySelector('header .brand .v27-brand-version');if(label)label.textContent='v31.0';document.title='Emergency Doctor Simulator · v31.0 (한국어)'};
+// Remove a past-version import button (not needed when v31 remains separate).
+// Keep the user's existing v30 saved game accessible as an optional copy only.
+function v31ImportV30(){const raw=localStorage.getItem('ed-v30-ko');if(!raw)return;
+ if(!confirm('기존 v30 저장을 새 v31 저장으로 복사할까요? 기존 v30 진행 상황은 그대로 보존됩니다.'))return;
+ try{const obj=JSON.parse(raw);s=obj;s.v22Started=true;s.v31Version=V31_VERSION;s.queue??=[];
+ for(const p of s.queue){p.treatments=(p.treatments||[]).filter(k=>!['Urinary analgesic','Antidiarrhoeal','Urgent spinal assessment'].includes(k));augmentPatient(p)}
+ v7InitState();v21Init();$('v22Setup')?.remove();s.speed=s.ended?0:1;render();v22Persist();pushV6Notice('v30 저장을 v31로 복사했습니다. 기존 v30은 유지됩니다.');
+ }catch(err){alert('v30 저장 복사 실패: '+err.message)}
+}
+const v31LastBoot=v22Boot;
+v22Boot=function(){v31LastBoot();const setup=$('v22Setup'),actions=setup?.querySelector('.v22-actions');
+ if(actions&&localStorage.getItem('ed-v30-ko')&&!setup.querySelector('#v31ImportV30'))
+  actions.insertAdjacentHTML('afterbegin','<button id="v31ImportV30" onclick="v31ImportV30()">기존 v30 저장 복사하기</button>');
+ // Remove version-mismatch legacy import actions; leave only v30-specific optional import.
+ setup?.querySelectorAll('[id^="v30Import"],[id^="v29Import"],[id^="v28Import"],[id^="v25Import"],[id^="v24Import"]').forEach(n=>n.remove());
+};
+
 s.speed=0;s.v22Started=false;v21Init();v22Boot();
 setInterval(()=>{if(s.v22Started&&s.speed&&!s.ended){s.acc+=s.speed;if(s.acc>=1){let m=Math.floor(s.acc);s.acc-=m;step(m)}}},1000);
 
