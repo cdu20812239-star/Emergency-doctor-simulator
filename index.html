@@ -7722,7 +7722,7 @@ renderHeader=function(){v30OldHeader();const label=document.querySelector('heade
    Emergency Doctor Simulator v31 · Korean · offline integrated patch
    Clinical simplifications are game rules, NOT treatment recommendations.
    ===================================================================== */
-const V31_VERSION='31.0';
+const V31_VERSION='31.1';
 // Keep v30 autosaves untouched: v31 gets its own independent storage.
 // Internal treatment keys are stable for backward compatibility; only human-visible names change.
 const V31_RENAMES={
@@ -8188,6 +8188,595 @@ v22Boot=function(){v31LastBoot();const setup=$('v22Setup'),actions=setup?.queryS
  // Remove version-mismatch legacy import actions; leave only v30-specific optional import.
  setup?.querySelectorAll('[id^="v30Import"],[id^="v29Import"],[id^="v28Import"],[id^="v25Import"],[id^="v24Import"]').forEach(n=>n.remove());
 };
+
+
+/* =======================================================================
+   Emergency Doctor Simulator v31.1 — UI + Korean language patch
+   V31 clinical rules, investigation IDs, scoring, time, triage and saves stay intact.
+   ======================================================================= */
+const V311_VERSION='31.1';
+
+// 1. Diagnosis groups in the selection dialog (NOT specialist referrals).
+for(const [key,ko] of [['ENT','이비인후'],['Gynaecology','산부·여성'],['Haematology','혈액']]){
+ if(!V24_CATEGORIES.some(([existing])=>existing===key))V24_CATEGORIES.splice(V24_CATEGORIES.length-1,0,[key,ko]);
+}
+const v311PreviousCategory=v24CategoryFor;
+v24CategoryFor=function(d){
+ if(['Tonsillitis','Epistaxis'].includes(d))return 'ENT';
+ if(['Ectopic Pregnancy','Ovarian Torsion'].includes(d))return 'Gynaecology';
+ if(['Febrile Neutropenia','Sickle Cell Crisis'].includes(d))return 'Haematology';
+ return v311PreviousCategory(d);
+};
+
+// 2. Plain Korean for patients' subjective complaints; diagnosis names untouched.
+Object.assign(complaints,{
+ 'Sore throat, rhinorrhoea, cough':'목 아픔·콧물·기침',
+ 'Sore throat, rhinorrhea, cough':'목 아픔·콧물·기침',
+ 'Sore throat and fever':'목 아픔·열',
+ 'Palpitations':'가슴 두근거림',
+ 'Dyspnoea':'숨참', 'Severe dyspnoea':'숨이 몹시 참',
+ 'Shortness of breath':'숨참','Wheeze':'숨쉴 때 쌕쌕거림',
+ 'Collapse / convulsion':'쓰러짐·발작',
+ 'Melena / haematemesis':'검은색 대변·피를 토함',
+ 'Vomiting, polyuria':'구토·소변량 증가',
+ 'Sweating, confusion':'식은땀·의식 혼란',
+ 'Dysuria':'소변볼 때 통증',
+ 'Rash, swelling, dyspnoea':'피부 발진·부음·숨참',
+ 'Focal weakness':'한쪽 팔·다리에 힘이 빠짐',
+ 'Transient weakness':'일시적으로 팔다리에 힘이 빠짐',
+ 'Unilateral leg swelling':'한쪽 다리가 부음',
+ 'Fever, headache, neck stiffness':'열·두통·목이 뻣뻣함',
+ 'Sudden testicular pain':'갑자기 한쪽 고환이 아픔',
+ 'Sudden unilateral pelvic pain':'갑자기 한쪽 아랫배가 아픔',
+ 'Fever after chemotherapy':'항암치료 후 열과 오한',
+ 'Persistent nosebleed':'계속되는 코피'
+});
+const V311_SYMPTOM_WORDS=[
+ [/rhinorrh(?:oea|ea)/gi,'콧물'],[/sore throat/gi,'목이 아픔'],
+ [/palpitations?/gi,'가슴 두근거림'],[/\bdyspnoea\b/gi,'숨참'],
+ [/\bhaemoptysis\b|\bhemoptysis\b/gi,'피 섞인 가래'],
+ [/\bhaematemesis\b|\bhematemesis\b/gi,'피를 토함'],
+ [/\bmelaena\b|\bmelena\b/gi,'검은색 대변'],
+ [/\bphotophobia\b/gi,'빛에 민감함'],[/\bdysphagia\b/gi,'삼키기 어려움'],
+ [/\boliguria\b/gi,'소변량 감소'],[/\bpolyuria\b/gi,'소변량 증가'],
+ [/\bdysuria\b/gi,'소변볼 때 통증'],[/\bdiaphoresis\b/gi,'식은땀'],
+ [/\bparaesthesias?\b|\bparesthesias?\b/gi,'저림·감각 변화'],
+ [/\bfrequency\b/gi,'소변을 자주 봄'],[/\bcough\b/gi,'기침'],
+ [/\bshortness of breath\b/gi,'숨참'],[/\bsyncope\b/gi,'의식을 잃고 쓰러짐'],
+ [/\bnausea\b/gi,'메스꺼움'],[/\bvomiting\b/gi,'구토']
+];
+const V311_SYMPTOM_KOREAN=[
+ ['심계항진','가슴 두근거림'],['호흡곤란','숨참'],['객혈','피 섞인 가래'],
+ ['토혈','피를 토함'],['혈변','피가 섞인 대변'],['흑색변','검은색 대변'],
+ ['배뇨곤란','소변보기 어려움'],['빈뇨','소변을 자주 봄'],['핍뇨','소변량 감소'],
+ ['연하곤란','삼키기 어려움'],['감각이상','저림·감각 변화'],
+ ['편측 마비','한쪽 팔다리 마비'],['광과민','빛에 민감함'],['발한','땀이 남']
+];
+function v311PatientSpeak(value){
+ let text=String(value??'');
+ // Patient responses should not show duplicated medical English glosses.
+ text=text.replace(/\((?:nausea|vomiting|constipation|diarrhoea|diarrhea|dysuria|polyuria|rhinorrhoea|rhinorrhea|sore throat|cough)\)/gi,'');
+ for(const [re,ko] of V311_SYMPTOM_WORDS)text=text.replace(re,ko);
+ for(const [from,to] of V311_SYMPTOM_KOREAN)text=text.split(from).join(to);
+ // Strip old English glosses that escaped from the interview answer engine.
+ text=text.replace(/\((?:nausea|vomiting|constipation|diarrhoea|diarrhea|dysuria|polyuria|rhinorrhoea|rhinorrhea|sore throat|cough)\)/gi,'');
+ return text.replace(/\s+,/g,',').replace(/ {2,}/g,' ');
+}
+for(const k of Object.keys(symptomDescriptions))symptomDescriptions[k]=v311PatientSpeak(symptomDescriptions[k]);
+for(const k of Object.keys(complaints))complaints[k]=v311PatientSpeak(complaints[k]);
+// Do not replace labels of diagnoses or investigations when displaying them.
+const v311PreviousAnswer=answer;
+answer=function(p,key){
+ if(key==='progression'){
+  const d=p.d,cat=p.cat||3;
+  if(['STEMI','Aortic Dissection','Stroke','Seizure','Testicular Torsion','Ovarian Torsion'].includes(d))return '갑자기 시작됐고, 처음부터 심하거나 빠르게 심해졌어요.';
+  if(['Appendicitis','Cholecystitis','Cellulitis','Pyelonephritis','Tonsillitis','Pneumonia'].includes(d))return '처음에는 가벼웠는데 시간이 지나면서 점점 더 심해졌어요.';
+  if(['Constipation','Parkinson Disease','Hypothyroidism'].includes(d))return '며칠 전부터 서서히 시작됐고 계속 불편해요.';
+  if(['Atrial Fibrillation','SVT','Migraine','Renal Colic'].includes(d))return '증상이 심해졌다가 조금 나아지기를 반복해요.';
+  return cat<=2?'오늘 갑자기 증상이 심해졌어요. 아직 나아지지 않았어요.':'최근부터 증상이 계속되고 있고 크게 나아지지 않았어요.';
+ }
+ if(key==='recentCare'){
+  if(p.d==='Febrile Neutropenia'||/항암|chemotherap/i.test(String(p.v31RiskCondition||'')))return '최근 항암치료를 받았어요. 치료를 받은 뒤 열이 나기 시작했어요.';
+  const risk=String(p.v20Risk||'');
+  if(/수술|입원|hospital|surg/i.test(risk))return `최근 치료나 입원 관련 사항은 ${v311PatientSpeak(risk)}. 자세한 기록은 확인이 필요해요.`;
+  if(['DVT','Pulmonary Embolism'].includes(p.d)&&/움직|장거리|비행/i.test(risk))return `최근 오래 움직이지 못했어요. ${v311PatientSpeak(risk)}`;
+  return '최근에 입원하거나 수술 또는 항암치료를 받은 적은 없어요. 특별히 새로 시작한 치료도 없어요.';
+ }
+ return v311PatientSpeak(v311PreviousAnswer(p,key));
+};
+if(!baseQuestions.some(([key])=>key==='progression'))baseQuestions.splice(1,0,['progression','증상은 처음보다 나아졌나요, 더 심해졌나요?']);
+if(!baseQuestions.some(([key])=>key==='recentCare'))baseQuestions.push(['recentCare','최근 입원하거나 수술·항암치료 등 치료받은 적이 있나요?']);
+const v311PainQuestion=V10_EXTRA_QUESTIONS.find(([key])=>key==='pain');
+if(v311PainQuestion)v311PainQuestion[1]='통증 사정 (Pain Assessment) · 부위·양상·강도';
+
+// 3. Microbiology wording: short Korean titles; preserve lab-order IDs.
+Object.assign(V19_MICRO_LABELS,{
+ 'Respiratory Swab':'호흡기 바이러스 검사',
+ 'Blood cultures':'혈액 배양검사',
+ 'Urine MCS':'소변 배양검사',
+ 'Wound Swab':'상처 배양검사',
+ 'Fecal MCS':'대변 배양검사',
+ 'Lumbar puncture (CSF)':'요추천자·뇌척수액 검사'
+});
+Object.assign(testKorean,{
+ 'Respiratory Swab':'호흡기 바이러스 검사',
+ 'Blood cultures':'혈액 배양검사',
+ 'Urine MCS':'소변 배양검사',
+ 'Wound Swab':'상처 배양검사',
+ 'Fecal MCS':'대변 배양검사',
+ 'Lumbar puncture (CSF)':'요추천자·뇌척수액 검사'
+});
+Object.assign(testKo,{
+ 'Respiratory Swab':'호흡기 바이러스 검사',
+ 'Blood cultures':'혈액 배양검사',
+ 'Urine MCS':'소변 배양검사',
+ 'Wound Swab':'상처 배양검사',
+ 'Fecal MCS':'대변 배양검사'
+});
+// Procedures: drop NGT scoring hint from the visible menu, no change to clinical scoring.
+tx['NGT Placement']='비위관 삽입 (NGT Placement)';
+tx['Nasal Haemostasis']='코피 지혈 (Nasal Haemostasis)';
+const v311PreviousMedication=v10OpenMedication;
+v10OpenMedication=function(kind){
+ const result=v311PreviousMedication(kind);
+ if(kind==='procedure')for(const label of document.querySelectorAll('#v10OptionGrid label.v10-pop-choice')){
+  if(label.querySelector('input.v10-med-check')?.value==='NGT Placement')label.querySelector('small')?.remove();
+ }
+ return result;
+};
+
+// The existing v26 swab button has a hardcoded older label; repaint it last.
+const v311PreviousInvestigations=renderInvestigations;
+renderInvestigations=function(){
+ const result=v311PreviousInvestigations();
+ const button=[...($('investigations')?.querySelectorAll('.v16-micro button')||[])].find(b=>b.getAttribute('onclick')==="order('Respiratory Swab')");
+ if(button)v25FormatButton(button,V19_MICRO_LABELS['Respiratory Swab'],'swab',v25Meta('Respiratory Swab','micro'));
+ return result;
+};
+
+// 4. Emergency radiology: display "Urgent" without renaming saved/internal test keys.
+const v311PreviousImagingMenu=v26ImagingMenu;
+v26ImagingMenu=function(){
+ v311PreviousImagingMenu();
+ const stack=$('investigations')?.querySelector('.v27-imaging-stack');if(!stack)return;
+ for(const b of stack.querySelectorAll('.v27-emergency-btn')){
+  const title=b.querySelector('b');if(title)title.textContent=title.textContent.replace(/Emergency CT/g,'Urgent CT').replace(/Emergency MRI/g,'Urgent MRI').replace(/Emergency Ultrasound/g,'Urgent Ultrasound');
+ }
+};
+const v311PreviousLabelTest=labelTest;
+labelTest=function(n){const title=v311PreviousLabelTest(n);
+ return /^Emergency (?:CT|MRI|USS):/.test(n)?title.replace(/^응급 /,'긴급 ').replace(/\bEmergency\b/g,'Urgent'):title;
+};
+function v311UrgentModalLanguage(){
+ const box=$('modalbox');if(!box)return;
+ const heading=box.querySelector('.v10-pop-head h2');
+ if(heading)heading.textContent=heading.textContent.replace(/Emergency (CT|MRI|Ultrasound)/g,'Urgent $1');
+}
+const v311PreviousEmergencyCT=v27EmergencyCT;
+v27EmergencyCT=function(){const done=v311PreviousEmergencyCT();v311UrgentModalLanguage();return done};
+const v311PreviousEmergencyImaging=v31EmergencyImaging;
+v31EmergencyImaging=function(kind){const done=v311PreviousEmergencyImaging(kind);v311UrgentModalLanguage();return done};
+
+// 5. New compact tour instructions; keep all existing mechanics and support steps.
+function v311TourEdit(keyword,newText,newTitle){const item=V24_TOUR.find(t=>t.title.includes(keyword));if(!item)return null;
+ item.text=newText;if(newTitle)item.title=newTitle;return item;
+}
+v311TourEdit('CAT 응급도','CAT 1은 가장 위급하고 CAT 5는 상대적으로 덜 위급합니다. 숫자가 작은 CAT일수록 상태가 더 빨리 악화될 확률이 높으므로 우선순위를 정하세요.');
+v311TourEdit('내 환자와 바이탈','담당 환자를 선택하고 혈압·맥박·호흡수·산소포화도·체온·의식 상태를 확인하세요. 바이탈은 모니터에서 매 15분 자동 갱신되며, 활력징후 확인 버튼으로 추가 확인할 수 있습니다.');
+v311TourEdit('환자 상태와 치료 반응','환자의 컨디션은 시간이 지나면서 낮아질 수 있으며, 일반적으로 위급한 질환일수록 악화가 빠릅니다. 적절한 치료로 상태를 개선할 수 있지만, 잘못된 처치는 상태를 악화시킬 수 있습니다.');
+v311TourEdit('문진하기','증상 시작 시점과 경과, 동반 증상, 위험인자, 복용 약물, 최근 치료·입원력 등을 확인하세요.');
+v311TourEdit('신체검사','신체검사를 통해 진단에 필요한 추가 단서를 얻을 수 있습니다. 적절한 장비 아이템을 구매하면 검사 시간을 단축할 수 있습니다.');
+v311TourEdit('신속검사','심전도(ECG), 정맥혈가스(VBG), 혈당, 혈중 케톤, 소변검사, 방광 스캔 등으로 빠르게 단서를 얻을 수 있습니다. 적절한 장비 아이템을 구매하면 검사 시간을 단축할 수 있습니다.');
+const v311BloodTour=v311TourEdit('혈액·미생물·영상검사',
+ '필요한 혈액검사를 오더하면 일정 시간 후 결과를 확인할 수 있습니다. 미생물검사는 감염 원인균이나 바이러스 등을 확인하기 위한 검사로, 필요한 항목을 선택하여 주문하세요.',
+ '혈액검사·미생물검사');
+if(v311BloodTour){
+ const idx=V24_TOUR.indexOf(v311BloodTour);
+ V24_TOUR.splice(idx+1,0,{
+  title:'영상검사',target:'.v27-imaging-stack',tab:'tests',
+  text:'X-ray, CT, MRI, 초음파로 필요한 영상 결과를 확인할 수 있습니다. 긴급한 경우 Urgent CT·MRI·Ultrasound를 이용해 대기시간 없이 즉시 판독할 수 있습니다. 단, 불필요한 Urgent 영상검사는 일반 검사보다 2배 감점됩니다.'
+ });
+}
+v311TourEdit('주진단과 추가 진단','최종 주진단을 선택하고, 해당되는 경우 추가 진단도 선택하세요.');
+v311TourEdit('직급·XP·평판','환자 진료로 경험치(XP)와 평판을 얻고 진급할 수 있습니다. 일부 직급은 진급을 위해 평판 조건도 충족해야 합니다.');
+const v311Nums=['①','②','③','④','⑤','⑥','⑦','⑧','⑨','⑩','⑪','⑫','⑬','⑭','⑮','⑯','⑰','⑱','⑲','⑳','㉑','㉒'];
+V24_TOUR.forEach((item,i)=>{
+ if(i===0)return;
+ item.title=item.title.replace(/^[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳㉑㉒]+\s*/,'');
+ item.title=`${v311Nums[i-1]||i} ${item.title}`;
+});
+
+// 6. Layout repair: icon on the left, both text lines stay in the right column.
+const v311CSS=document.createElement('style');
+v311CSS.id='v311-responsive-fix';
+v311CSS.textContent=`
+#investigations .v27-imaging-stack button,
+#investigations .v16-micro .v18-micro-direct button,
+#investigations .v16-micro button[data-v23-ico]{
+ display:flex!important;flex-direction:row!important;flex-wrap:nowrap!important;
+ align-items:center!important;justify-content:flex-start!important;
+ text-align:left!important;gap:9px!important;min-width:0!important;
+ white-space:normal!important;overflow-wrap:break-word;
+}
+#investigations .v27-imaging-stack button>.v26-imaging-icon{
+ flex:0 0 26px!important;width:26px!important;text-align:center!important;
+}
+#investigations .v27-imaging-stack button>span:nth-child(2),
+#investigations .v16-micro button[data-v23-ico] .v23-action-label{
+ display:block!important;flex:1 1 0!important;min-width:0!important;
+ overflow-wrap:anywhere;white-space:normal!important;
+}
+#investigations .v16-micro button[data-v23-ico] .v23-icon,
+#investigations .v16-micro button[data-v23-ico] .v24-color-icon{
+ flex:0 0 25px!important;width:25px!important;margin-right:0!important;
+}
+#investigations .v27-imaging-stack button b,
+#investigations .v16-micro .v23-action-label small{
+ display:block!important;white-space:normal!important;
+}
+#investigations .v27-imaging-stack button small{
+ display:block!important;white-space:normal!important;
+ overflow-wrap:anywhere;
+}
+@media(max-width:420px){
+ #investigations .v27-imaging-stack button,
+ #investigations .v16-micro button[data-v23-ico]{padding:9px 8px!important;gap:7px!important}
+}
+`;
+document.head.append(v311CSS);
+const v311PreviousRenderVitals=renderVitals;
+renderVitals=function(){const out=v311PreviousRenderVitals();const button=$('v19RepeatVitals');
+ if(button)button.textContent='🔄 활력징후 확인 · 5분';
+ return out;
+};
+const v311PreviousBoot=v22Boot;
+v22Boot=function(){
+ const r=v311PreviousBoot();const setup=$('v22Setup');
+ const heading=setup?.querySelector('h1');if(heading)heading.textContent='🏥 ED Simulator v31.1';
+ const note=$('v27VersionTag');if(note){note.style.display='none';}
+ return r;
+};
+const v311PreviousHeader=renderHeader;
+renderHeader=function(){const r=v311PreviousHeader();
+ const brand=document.querySelector('header .brand .v27-brand-version');if(brand)brand.textContent='v31.1';
+ document.title='Emergency Doctor Simulator · v31.1 (한국어)';return r;
+};
+
+
+/* =======================================================================
+   Emergency Doctor Simulator v31.2
+   Progressive interview clues, lay-language chief complaints, serum beta-hCG
+   Keep existing diagnoses, referrals, treatments and save storage intact.
+   ======================================================================= */
+const V312_VERSION='31.2';
+
+// Patient-only wording: don't touch diagnosis names or examination findings.
+Object.assign(complaints,{
+ 'Red swollen limb':'팔이나 다리가 빨갛게 부음',
+ 'Abdominal distension':'배가 빵빵하게 부음',
+ 'Right lower abdominal pain':'오른쪽 아랫배 통증',
+ 'Right upper abdominal pain':'오른쪽 윗배 통증',
+ 'Left lower abdominal pain':'왼쪽 아랫배 통증',
+ 'Pelvic pain, bleeding':'아랫배 통증·질에서 피가 남',
+ 'Fever, headache, neck stiffness':'열·두통·목이 뻣뻣함',
+ 'Fever, unwell':'발열·전신 상태 악화' // Preserve existing requested phrase.
+});
+const V312_SUBJECTIVE_WORDS=[
+ ['사지 발적·부종','팔이나 다리가 빨갛게 부음'],
+ ['복부 팽만','배가 빵빵하게 부음'],
+ ['우하복부','오른쪽 아랫배'],['우상복부','오른쪽 윗배'],['좌하복부','왼쪽 아랫배'],
+ ['골반통·질출혈','아랫배 통증·질에서 피가 남'],
+ ['목 경직','목이 뻣뻣함'],
+ ['사지 통증','팔과 다리 통증']
+];
+function v312PatientSpeak(raw){
+ let out=v311PatientSpeak(raw);
+ for(const [before,after] of V312_SUBJECTIVE_WORDS)out=out.split(before).join(after);
+ return out;
+}
+for(const name of Object.keys(complaints))complaints[name]=v312PatientSpeak(complaints[name]);
+for(const name of Object.keys(symptomDescriptions))symptomDescriptions[name]=v312PatientSpeak(symptomDescriptions[name]);
+
+// Every question is a single history event (basic and follow-up alike).
+// Existing v31 saved cases retain their interview history; the old 5-question
+// cap and the old 4th/5th-question penalty are migrated on first access.
+const V312_BASIC=[
+ ['onset','현재 증상'],
+ ['risk','과거 병력'],
+ ['meds','복용 약물'],
+ ['allergy','알레르기']
+];
+baseQuestions.splice(0,baseQuestions.length,...V312_BASIC.map(item=>[...item]));
+const V312_CLUES=[
+ {key:'assoc',label:'동반 증상',parent:'onset'},
+ {key:'pain',label:'통증 사정',parent:'onset',onlyPain:true},
+ {key:'recentCare',label:'최근 치료·입원력',parent:'risk'},
+ {key:'adherence',label:'복약 여부',parent:'meds'},
+ {key:'gastro',label:'메스꺼움·구토',parent:'assoc'},
+ {key:'urinary',label:'배뇨 증상',parent:'assoc'},
+ {key:'bowel',label:'배변 상태',parent:'assoc'},
+ {key:'neuro',label:'신경학적 증상',parent:'assoc'},
+ {key:'trigger',label:'증상 악화·완화 요인',parent:'pain'}
+];
+const V312_CLUE_MAP=Object.fromEntries(V312_CLUES.map(q=>[q.key,q]));
+const V312_ALL_QUESTIONS=[...V312_BASIC,...V312_CLUES.map(q=>[q.key,q.label])];
+function v312PainPresent(p){
+ const present=Number(p.pain)||0,arrival=Number(p.v10PainAtArrival)||0;
+ const chief=String(co(diseases.find(x=>x[0]===p.d)?.[2]||''));
+ const painCondition=!!(V20_PAIN[p.d]||V282_PAIN_DESCRIPTORS[p.d]||
+   (p.secondary&&(V20_PAIN[p.secondary]||V282_PAIN_DESCRIPTORS[p.secondary]))||
+   /통증|아픔|아파|두통|복통|흉통|골반통|요통|고환이 아픔/.test(chief));
+ // An old arrival pain score can be stale in legacy saves, so don't use it
+ // alone to unlock a clinically irrelevant Pain Assessment question.
+ return present>2 || (painCondition&&arrival>2);
+}
+function v312EnsureInterview(p){
+ if(!p)return;
+ p.asked??=[];p.history??=[];
+ if(p.v312InterviewReady)return;
+ p.v312InterviewReady=true;
+ p.q=p.history.length;
+ p.questionPenalty=Math.max(0,p.q-5);
+ p.v312Unlocked=[];
+ for(const parent of p.asked){
+  for(const q of V312_CLUES){
+   if(q.parent!==parent||(q.onlyPain&&!v312PainPresent(p))||p.v312Unlocked.includes(q.key))continue;
+   p.v312Unlocked.push(q.key);
+  }
+ }
+ p.v312Expanded=p.asked.at(-1)||'';
+}
+function v312UnlockedAfter(p,key){
+ for(const q of V312_CLUES){
+  if(q.parent!==key||(q.onlyPain&&!v312PainPresent(p))||p.v312Unlocked.includes(q.key))continue;
+  p.v312Unlocked.push(q.key);
+ }
+}
+function v312CurrentSymptoms(p){
+ const chief=diseases.find(x=>x[0]===p.d)?.[2]||'';
+ const described=symptomDescriptions[p.d]||co(chief);
+ const course=answer(p,'progression');
+ return v312PatientSpeak(`${described} ${course}`);
+}
+function v312AssociatedSymptoms(p){
+ const sy=p.v10Symptoms||{},list=[];
+ const first=symptomDescriptions[p.d]||'';
+ const add=(text,word)=>{if(!first.includes(word)&&!list.includes(text))list.push(text)};
+ if(sy.nausea)add('속이 메스꺼움','메스꺼');
+ if(sy.vomiting)add('구토','토하');
+ if(sy.diarrhea)add('설사','설사');
+ if(sy.constipation)add('변비','변비');
+ if(sy.dysuria)add('소변볼 때 따가움','소변볼');
+ if(sy.polyuria)add('소변을 자주 봄','소변');
+ if(sy.fever||p.v20Infection?.febrile)add('열이나 오한','열');
+ if(p.v20InfectionSource==='respiratory')add('가래 또는 기침','기침');
+ if(['Stroke','TIA'].includes(p.d))add('말이 어눌해짐','말');
+ if(p.d==='Meningitis')add('목이 뻣뻣함','목');
+ return list.length?'그 밖에는 '+list.join(', ')+' 같은 증상이 있어요.':'지금 말씀드린 것 외에 특별히 다른 증상은 없어요.';
+}
+function v312NeuroSymptoms(p){
+ const ds=v29Dx(p),has=k=>ds.includes(k);
+ if(has('Stroke'))return '한쪽 팔이나 다리에 힘이 빠지고, 말이 평소보다 어눌해졌어요.';
+ if(has('TIA'))return '잠깐 한쪽 팔다리에 힘이 빠지고 말이 잘 나오지 않았지만, 지금은 많이 좋아졌어요.';
+ if(has('Seizure'))return '당시 기억이 잘 나지 않고, 주변 사람이 몸을 떨며 의식을 잃었다고 했어요.';
+ if(has('Intracranial Haemorrhage'))return '갑자기 머리가 매우 심하게 아팠어요. 다른 신경 증상은 잘 모르겠어요.';
+ if(has('Cauda Equina Syndrome'))return '다리나 엉덩이 사이 감각이 평소와 다르고 소변을 보기가 어려워요.';
+ if(has('Parkinson Disease'))return '손이 떨리고 움직임이 느려진 느낌이 있어요.';
+ if(has('Migraine'))return '빛이 거슬리지만, 팔다리에 힘이 빠지거나 말이 어눌해지지는 않았어요.';
+ if(has('Meningitis'))return '두통이 심하고 목이 뻣뻣해요. 빛을 보면 더 불편해요.';
+ if((Number(p.v16OriginalGCS??p.gcs)||15)<15)return '잠깐 혼란스럽거나 기억이 흐릿했어요. 그 외에는 잘 모르겠어요.';
+ return '팔다리 힘이 빠지거나 저리고, 말이나 시야가 달라진 증상은 없어요.';
+}
+function v312AggravatingRelieving(p){
+ const factor=p.v20Pain?.[6];
+ if(factor&&String(factor).trim()&&!/^(없음|모름|특이사항 없음)$/.test(factor)){
+  if(/모르겠음|잘 모르겠|특별한 악화 요인은/.test(String(factor)))return '어떤 상황에서 더 심해지는지는 잘 모르겠어요.';
+  let speech=String(factor).trim().replace(/[.。]+$/,'');
+  speech=speech.replace(/누우면 악화되고 앞으로 숙이면 완화되기도 함/g,'누우면 더 아프고 앞으로 숙이면 조금 나아져요')
+   .replace(/활동 중 악화 가능/g,'움직일 때 더 아픈 편이에요')
+   .replace(/움직일 때 악화 가능/g,'움직일 때 더 아픈 편이에요')
+   .replace(/깊게 숨 쉬면 악화/g,'숨을 깊게 들이마시면 더 아파요')
+   .replace(/빛과 소음에 악화/g,'밝은 빛이나 큰 소리를 들으면 더 아파요')
+   .replace(/식사·약과 연관 가능/g,'식사나 약을 먹는 것과 관련이 있는 것 같아요')
+   .replace(/악화 가능$/g,'더 심해질 수 있어요')
+   .replace(/완화되지 않음$/g,'나아지지 않아요')
+   .replace(/악화$/g,'더 아파요')
+   .replace(/심해짐$/g,'더 아파요')
+   .replace(/편해지지 않음$/g,'편해지지 않아요')
+   .replace(/가라앉지 않음$/g,'가라앉지 않아요')
+   .replace(/나아지지 않음$/g,'나아지지 않아요')
+   .replace(/더 아플 수 있음$/g,'더 아플 수 있어요')
+   .replace(/함$/g,'해요');
+  return v312PatientSpeak(speech.replace(/([^.?!])$/,'$1.'));
+ }
+ const ds=v29Dx(p),has=k=>ds.includes(k);
+ if(has('Pulmonary Embolism')||has('Pneumothorax'))return '숨을 깊게 들이마시면 더 아파요.';
+ if(has('Cholecystitis')||has('Pancreatitis'))return '식사 후 더 불편해질 때가 있어요.';
+ if(has('Renal Colic'))return '자세를 바꿔도 별로 낫지 않고 통증이 심해졌다 약해졌다 해요.';
+ return '특별히 심해지거나 나아지는 상황은 잘 모르겠어요.';
+}
+const v312PreviousAnswer=answer;
+answer=function(p,key){
+ if(!p)return '';
+ if(key==='onset')return v312CurrentSymptoms(p);
+ if(key==='assoc')return v312AssociatedSymptoms(p);
+ if(key==='risk'){
+  const pmh=(p.v13PMH||[]).map(k=>V13_PMH[k]?.[0]||k);
+  if(v29Has(p,'Sickle Cell Crisis')&&!pmh.some(x=>/겸상|Sickle/i.test(x)))pmh.push('겸상적혈구병');
+  return v312PatientSpeak(pmh.length?'이전에 진단받은 병은 '+[...new Set(pmh)].join(', ')+'이에요.':'특별히 진단받은 만성질환은 없어요.');
+ }
+ if(key==='meds'){
+  const meds=p.v14Meds||[];
+  return meds.length?v312PatientSpeak('평소 복용하는 약은 '+meds.join(', ')+'이에요.'):
+   p.v16NonAdherent?'평소 처방받은 약이 있지만 이름은 정확히 기억나지 않아요.':'평소에 정기적으로 복용하는 약은 없어요.';
+ }
+ if(key==='adherence'){
+  if(p.v16NonAdherent)return '최근 며칠 동안 처방약을 제대로 챙겨 먹지 못했어요.';
+  return (p.v14Meds||[]).length?'네, 평소 처방받은 약을 대체로 잘 복용하고 있어요.':'평소에 복용하는 약이 없어요.';
+ }
+ if(key==='neuro')return v312NeuroSymptoms(p);
+ if(key==='trigger')return v312AggravatingRelieving(p);
+ return v312PatientSpeak(v312PreviousAnswer(p,key));
+};
+// Replace (rather than wrap) the legacy ask handler to remove the 5-question
+// cap and apply one total count, irrespective of basic/follow-up depth.
+ask=function(key){
+ const p=cur();if(!p)return;
+ v312EnsureInterview(p);
+ if(p.gcs<=8){pushV6Notice('의식 저하로 환자 문진 불가 — 구급대 인계를 확인하세요.');return}
+ if(p.asked.includes(key))return;
+ const q=V312_ALL_QUESTIONS.find(item=>item[0]===key);
+ if(!q)return;
+ if(!V312_BASIC.some(item=>item[0]===key)&&!p.v312Unlocked.includes(key))return;
+ v10Ensure(p);
+ p.asked.push(key);
+ p.history.push({key,q:q[1],a:answer(p,key),v312:true});
+ p.q=p.history.length;
+ p.questionPenalty=Math.max(0,p.q-5);
+ p.v312Expanded=key;
+ v312UnlockedAfter(p,key);
+ step(V312_BASIC.some(item=>item[0]===key)?3:2);
+ render();
+};
+v19QuestionOptions=function(p){
+ v312EnsureInterview(p);
+ return V312_ALL_QUESTIONS.filter(q=>(V312_BASIC.some(item=>item[0]===q[0])||p.v312Unlocked.includes(q[0]))&&!p.asked.includes(q[0]));
+};
+function v312InterviewCount(p){
+ const n=p.history?.length||0;
+ return `문진 ${n}회 · ${Math.max(0,5-n)}회 무료 남음 · 추가 감점 −${p.questionPenalty||0}점`;
+}
+function v312AnswerFor(p,key){
+ const record=p.history.find(x=>x.key===key);
+ if(record)return record.a;
+ const index=p.asked.indexOf(key);
+ return index>=0?p.history[index]?.a||'이전 답변을 확인해 주세요.':'';
+}
+function v312QuestionMarkup(p,key,label,isBasic){
+ const done=p.asked.includes(key),expanded=done&&p.v312Expanded===key;
+ const response=done?v312AnswerFor(p,key):'';
+ return `<div class="v312-question-item ${done?'v312-done':''}"><button type="button" class="v312-question-btn" onclick="v312InterviewClick('${key}')" ${p.gcs<=8?'disabled':''}>
+ <span class="v312-q-status">${done?'✓':'?'}</span><span class="v312-q-title">${v10Esc(label)}${done?'<small>질문 완료 · 답변 다시 보기</small>':''}</span><span class="v312-q-time">${isBasic?'3분':'2분'}</span></button>
+ ${expanded?`<div class="v312-question-answer"><b>환자:</b> ${v10Esc(response)}</div>`:''}</div>`;
+}
+function v312InterviewClick(key){
+ const p=cur();if(!p)return;
+ v312EnsureInterview(p);
+ const modal=$('modalbox'),scroll=modal?.scrollTop||0;
+ if(p.asked.includes(key)){
+  p.v312Expanded=p.v312Expanded===key?'':key;
+  v19OpenInterview(false);
+ }else{
+  v19Ask(key);
+ }
+ if($('modal').classList.contains('show')&&modal)modal.scrollTop=scroll;
+}
+v19OpenInterview=function(full=false){
+ const p=cur();if(!p)return;
+ v312EnsureInterview(p);
+ const basics=V312_BASIC.map(([key,label])=>v312QuestionMarkup(p,key,label,true)).join('');
+ const clues=p.v312Unlocked.map(key=>V312_CLUE_MAP[key]).filter(Boolean);
+ const clueMarkup=clues.map(q=>v312QuestionMarkup(p,q.key,q.label,false)).join('');
+ const note=`기본 질문 3분 · 파생 질문 2분 · 5번째까지 감점 없음 · 6번째 질문부터 −1점/회 · 횟수 제한 없음`;
+ const history=full?`<h3 class="v312-log-title">📖 전체 문진 기록</h3><div class="v312-history">${p.history.length?p.history.map((h,i)=>`<div><b>${i+1}. ${v10Esc(h.q)}</b><p>${v10Esc(h.a)}</p></div>`).join(''):'아직 문진한 내용이 없습니다.'}</div>`:'';
+ v10OpenModal(`🗣️ 문진 · ${v10Esc(p.name||'환자')} (Interview)`,
+ `<div class="v312-interview-head"><div class="v312-counter">${v312InterviewCount(p)}</div><div class="v312-small-note">${note}</div></div>
+ ${p.gcs<=12?`<div class="v16-handover"><strong>🚑 구급대 인계 (Paramedic Handover)</strong><div>${v10Esc(p.v16Handover||'의식 상태에 대한 정보 없음')}</div></div>`:''}
+ <div class="v312-interview-section"><h3>기본 질문</h3><div class="v312-question-list">${basics}</div></div>
+ <div class="v312-interview-section"><div class="v312-clue-heading"><h3>파생 질문</h3><span class="v312-new-badge">새로운 단서</span></div><p class="v312-help">질문을 완료하면 새로운 질문이 이곳에 추가됩니다.</p><div class="v312-question-list">${clueMarkup||'<p class="v312-empty">기본 질문을 선택하면 추가로 물어볼 수 있는 질문이 나타납니다.</p>'}</div></div>
+ ${history}`,
+ '<button class="primary" onclick="v19EndInterview()">✅ 문진 마치기</button>');
+};
+// The main patient panel also gets the new question counter/penalty message.
+const v312PreviousRenderClinical=renderClinical;
+renderClinical=function(){
+ const p=cur();if(p)v312EnsureInterview(p);
+ v312PreviousRenderClinical();
+ if(!p)return;
+ const box=$('clinical');
+ const note=box?.querySelector('.v19-interview-note');
+ if(note)note.textContent=v312InterviewCount(p)+' · 기본 3분 / 파생 2분';
+};
+
+// A separately orderable 20-minute blood test. Normal and positive results
+// are mutually consistent for each simulated patient (stable saved value).
+const V312_HCG='Serum β-hCG';
+if(!bloodTests.includes(V312_HCG))bloodTests.push(V312_HCG);
+if(!blood.some(item=>item[0]===V312_HCG))blood.push([V312_HCG,-1]);
+testKorean[V312_HCG]='혈중 임신호르몬';
+labEn[V312_HCG]='Serum β-hCG';
+testKo[V312_HCG]='혈중 β-hCG';
+V22_BLOOD_ADDITIONS['Ectopic Pregnancy']=[...new Set([...(V22_BLOOD_ADDITIONS['Ectopic Pregnancy']||[]),V312_HCG])];
+const v312PreviousDelay=delayFor;
+delayFor=function(n){return n===V312_HCG?20:v312PreviousDelay(n)};
+const v312PreviousRelevant=v10RelevantTest;
+v10RelevantTest=function(p,n){
+ if(n===V312_HCG){
+  if(v29Has(p,'Ectopic Pregnancy')||v29Has(p,'Ovarian Torsion'))return true;
+  const reproductive=String(p.sex).includes('여')&&p.age>=18&&p.age<=49;
+  const complaint=diseases.find(x=>x[0]===p.d)?.[2]||'';
+  return reproductive&&/abdominal|pelvic|flank|bleeding|pain/i.test(complaint)&&
+   ['Appendicitis','Renal Colic','UTI','Pyelonephritis','Gastroenteritis','Diverticulitis','Cholecystitis','Pancreatitis'].includes(p.d);
+ }
+ return v312PreviousRelevant(p,n);
+};
+function v312HcgValue(p){
+ if(Number.isFinite(p.v312Hcg))return p.v312Hcg;
+ if(v29Has(p,'Ectopic Pregnancy')){
+  // Educational example only: hCG alone neither confirms nor excludes ectopic pregnancy.
+  const possibilities=[420,860,1450,2450,3800,5600];
+  const index=(Number(String(p.id||'').replace(/\D/g,''))||1)%possibilities.length;
+  p.v312Hcg=possibilities[index];
+ }else{
+  const knownPregnancy=p.v31RiskCondition==='임신'&&p.sex==='여성'&&p.age<=49;
+  p.v312Hcg=knownPregnancy?2450:2;
+ }
+ return p.v312Hcg;
+}
+const v312PreviousTestResult=testResult;
+testResult=function(p,n){
+ if(n===V312_HCG){
+  const value=v312HcgValue(p);
+  const positive=value>=25;
+  return [{label:'Serum β-hCG',text:`${value.toLocaleString('en-AU')} IU/L`,flag:positive?'양성':'음성',detail:positive?'임신 관련 호르몬 양성 · 단일 수치만으로 자궁외임신을 확진하거나 배제할 수 없음':'비임신 참고범위 <5 IU/L'}];
+ }
+ return v312PreviousTestResult(p,n);
+};
+// Prevent an old cached blood-results panel from missing this new test.
+const v312PreviousTour=V24_TOUR.find(t=>t.title.includes('문진하기'));
+if(v312PreviousTour)v312PreviousTour.text='기본 질문을 완료하면 새로운 파생 질문이 열립니다. 파생 질문을 통해 또 다른 질문도 발견할 수 있습니다. 모든 질문은 한 목록에 추가되며, 5회까지 무료이고 6번째부터 질문당 −1점입니다.';
+const v312CSS=document.createElement('style');
+v312CSS.id='v312-interview-layout';
+v312CSS.textContent=`
+.v312-interview-head{background:#102a40;border:1px solid #36556f;border-radius:9px;padding:10px 12px;line-height:1.65}
+.v312-counter{font-weight:800;color:#bce6ff;font-size:13px}
+.v312-small-note,.v312-help{font-size:12px;color:#b7ccdf;margin:5px 0 0}
+.v312-interview-section{margin:13px 0 16px}
+.v312-interview-section h3{font-size:14px;margin:8px 0 9px}
+.v312-question-list{display:flex;flex-direction:column;gap:7px;margin:0}
+.v312-question-item{border:1px solid #344d65;border-radius:9px;overflow:hidden;background:#10243a;min-width:0}
+.v312-question-btn{width:100%;display:flex;flex-wrap:nowrap;align-items:center;gap:10px;border:0;border-radius:0;padding:12px;text-align:left;background:transparent;min-width:0}
+.v312-question-btn:hover{background:#25405a}
+.v312-q-status{flex:0 0 22px;width:22px;height:22px;border-radius:50%;background:#2d5672;color:#edf7ff;font-size:12px;display:flex;align-items:center;justify-content:center}
+.v312-done .v312-q-status{background:#226555}
+.v312-q-title{flex:1 1 0;min-width:0;overflow-wrap:anywhere;font-weight:700}
+.v312-q-title small{display:block;font-size:11px;color:#b2c8db;font-weight:400}
+.v312-q-time{flex:0 0 auto;color:#aec7dc;font-size:11px;white-space:nowrap}
+.v312-question-answer{border-top:1px solid #36516a;background:#13354a;color:#daf1ff;padding:12px 14px;font-size:13px;line-height:1.7;white-space:pre-line;overflow-wrap:anywhere}
+.v312-clue-heading{display:flex;align-items:center;justify-content:space-between;gap:9px}
+.v312-clue-heading h3{margin:8px 0}
+.v312-new-badge{background:#244659;color:#c6ecff;padding:3px 9px;border-radius:999px;font-size:11px;white-space:nowrap;border:1px solid #3b718b}
+.v312-empty{color:#b7ccdf;font-size:12px;border:1px dashed #40556e;padding:12px;margin:0;border-radius:8px}
+.v312-history{max-height:280px;overflow-y:auto;padding:4px 8px;background:#102338;border-radius:8px}
+.v312-history>div{padding:9px 4px;border-bottom:1px solid #34475d}
+.v312-history p{color:#c0e5ff;font-size:12px}
+@media(max-width:420px){.v312-question-btn{padding:10px 8px;gap:8px}.v312-q-title{font-size:13px}.v312-question-answer{padding:10px}}
+`;
+document.head.append(v312CSS);
+const v312PreviousBoot=v22Boot;
+v22Boot=function(){const out=v312PreviousBoot();const h=$('v22Setup')?.querySelector('h1');if(h)h.textContent='🏥 ED Simulator v31.2';return out};
+const v312PreviousHeader=renderHeader;
+renderHeader=function(){const out=v312PreviousHeader();const brand=document.querySelector('header .brand .v27-brand-version');if(brand)brand.textContent='v31.2';document.title='Emergency Doctor Simulator · v31.2 (한국어)';return out};
 
 s.speed=0;s.v22Started=false;v21Init();v22Boot();
 setInterval(()=>{if(s.v22Started&&s.speed&&!s.ended){s.acc+=s.speed;if(s.acc>=1){let m=Math.floor(s.acc);s.acc-=m;step(m)}}},1000);
