@@ -11736,4 +11736,289 @@ v37VersionUI=function(){v3710OldVersionUI();
 };
 
 </script>
+
+<script id="v3711-intermediate-diagnoses-only">
+/* v37.11: only intermediate diagnosis pool. Beginner/expert pools and all other systems unchanged. */
+const V3711_INTERMEDIATE_ADDED = [
+ 'Pulmonary Embolism','Seizure','Bowel Obstruction','GI Bleeding','Sepsis',
+ 'DVT','Stroke','Pulmonary Oedema','Atrial Fibrillation','Pyelonephritis',
+ 'Hypoglycaemia','Hyperkalemia','Ectopic Pregnancy','Pneumothorax',
+ 'Acute Urinary Retention'
+];
+V22_INTERMEDIATE.splice(0,V22_INTERMEDIATE.length,...V22_BEGINNER,...V3711_INTERMEDIATE_ADDED);
+V22_MODES.intermediate.max=V22_INTERMEDIATE.length;
+const v3711PreviousVersionUI=v37VersionUI;
+v37VersionUI=function(){
+ v3711PreviousVersionUI();
+ const title=document.getElementById('v27VersionTag');
+ if(title)title.textContent='v37.11 · 중급자 진단 30개';
+ document.title='Emergency Doctor Simulator · v37.11 (한국어)';
+ const intermediate=document.querySelector('.v22-mode[data-mode="intermediate"] small');
+ if(intermediate)intermediate.innerHTML=intermediate.innerHTML.replace(/진단\s*\d+개/,`진단 ${V22_INTERMEDIATE.length}개`);
+};
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',v37VersionUI,{once:true});
+else v37VersionUI();
+</script>
+<script id="v3712-mode-description-and-intermediate-results">
+/* v37.12: ONLY (a) setup difficulty explanations, and
+   (b) beginner-equivalent result explanation/glossary on intermediate.
+   Preserve v37.11 beginner 15 / intermediate 30 pools and expert behavior. */
+const v3712BeforeVersionUI=v37VersionUI;
+v37VersionUI=function(){
+ v3712BeforeVersionUI();
+ const beginner=document.querySelector('.v22-mode[data-mode="beginner"] small');
+ if(beginner)beginner.innerHTML=`진단 ${V22_BEGINNER.length}개 · 선임 의사 검사 해설<br>단순화된 신체·혈액·영상검사<br>의학 용어 ? 도움말`;
+ const intermediate=document.querySelector('.v22-mode[data-mode="intermediate"] small');
+ if(intermediate)intermediate.innerHTML=`진단 ${V22_INTERMEDIATE.length}개 · 선임 의사 검사 해설<br>단계적으로 구분된 신체·혈액·영상검사<br>의학 용어 ? 도움말`;
+ const heading=document.querySelector('#v22Setup h1');
+ if(heading)heading.textContent='🏥 ED Simulator v37.12';
+ const tag=document.getElementById('v27VersionTag');
+ if(tag)tag.textContent='v37.12 · 중급자 검사 결과 해설';
+ document.title='Emergency Doctor Simulator · v37.12 (한국어)';
+ for(const e of document.querySelectorAll('.v27-brand-version'))e.textContent='v37.12';
+};
+
+// The original v37 senior explanation is already used on beginner results.
+// Enable exactly that same existing HTML generator on intermediate results.
+const v3712BeforeResults=renderResults;
+renderResults=function(){
+ const result=v3712BeforeResults();
+ if(v22Difficulty()!=='intermediate')return result;
+ const root=document.getElementById('resultsPanel'),p=cur();
+ if(!root||!p)return result;
+ root.querySelector('.v22-interpret')?.remove();
+ root.querySelector('.v37-senior-results')?.remove();
+ const note=v37SeniorResultHtml(p);
+ if(note)root.insertAdjacentHTML('afterbegin',note);
+ return result;
+};
+
+// Intermediate users can open the same ? lab-term explanations that
+// the senior doctor text references. Original beginner/expert paths unchanged.
+const v3712BeforeGlossaryButtons=v37GlossaryButtons;
+v37GlossaryButtons=function(){
+ if(v22Difficulty()!=='intermediate')return v3712BeforeGlossaryButtons();
+ for(const item of document.querySelectorAll('#vitals .vital, #resultsPanel .ab-row, #resultsPanel .normal-mini, #resultsPanel .compact-item>strong')){
+  if(item.querySelector('.v37-help-btn'))continue;
+  const label=item.querySelector('small,b,strong')||item;
+  const key=v37GlossaryKey(label.textContent);
+  if(!key||!V37_GLOSSARY[key])continue;
+  const btn=document.createElement('button');
+  btn.type='button';btn.className='v37-help-btn';btn.textContent='?';
+  btn.title=V37_GLOSSARY[key][0]+' 설명';
+  btn.setAttribute('aria-label',V37_GLOSSARY[key][0]+' 뜻 보기');
+  btn.onclick=(e)=>{e.stopPropagation();v37GlossaryOpen(key)};
+  label.appendChild(btn);
+ }
+};
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',v37VersionUI,{once:true});
+else v37VersionUI();
+</script>
+<script id="v3713-intermediate-imaging-only">
+/* v37.13: Only intermediate imaging selection changes. Beginner/expert
+   delegate to the existing exact v37.12 code, without modifying their UI. */
+const v3713PreviousChooseImaging = v27ChooseImaging;
+v27ChooseImaging = function(type) {
+ if (v22Difficulty() !== 'intermediate') return v3713PreviousChooseImaging(type);
+ const p = cur(), mod = V26_MODALITIES[type];
+ if (!p || !mod || s.ended) return;
+ // Let the intermediate player pick only the modality. The game resolves
+ // the internal anatomical test just as the existing auto-modality path did.
+ const key = type === 'us' ? 'uss' : type;
+ const known = (V22_DIAG_IMAGES[p.d] || {})[key];
+ const fallback = {xray:'Chest X-ray', ct:'CT Brain', mri:'MRI Brain', uss:'USS Abdomen'};
+ const candidates = mod.items.filter(n => imagingTests.includes(n));
+ const chosen = candidates.includes(known) ? known :
+                candidates.includes(fallback[key]) ? fallback[key] : candidates[0];
+ if (!chosen) return;
+ if (p.tests.some(t => t.n === chosen)) {
+  pushV6Notice('이미 주문한 영상검사입니다: ' + labelTest(chosen));
+  return;
+ }
+ addOrder(chosen);
+ render();
+ pushV6Notice('영상검사 주문 완료: ' + labelTest(chosen) + ' · 결과는 검사 대기시간 후 도착합니다.');
+};
+const v3713PreviousImagingMenu = v26ImagingMenu;
+v26ImagingMenu = function() {
+ v3713PreviousImagingMenu();
+ if (v22Difficulty() !== 'intermediate') return;
+ const stack = document.querySelector('#investigations .v27-imaging-stack');
+ if (!stack) return;
+ // Preserve the original 4 modality buttons and all existing emergency actions.
+ for (const b of stack.querySelectorAll('button:not(.v27-emergency-btn)')) {
+  if (!/v27ChooseImaging\('/.test(b.getAttribute('onclick') || '')) continue;
+  const sub = b.querySelector('small');
+  if (sub) sub.textContent = '촬영 부위 자동 지정 · 세부 선택 없음';
+ }
+};
+const v3713PreviousVersionUI = v37VersionUI;
+v37VersionUI = function() {
+ v3713PreviousVersionUI();
+ const heading = document.querySelector('#v22Setup h1');
+ if (heading) heading.textContent = '🏥 ED Simulator v37.13';
+ const tag = document.getElementById('v27VersionTag');
+ if (tag) tag.textContent = 'v37.13 · 중급자 영상검사 선택 간소화';
+ document.title = 'Emergency Doctor Simulator · v37.13 (한국어)';
+ for (const e of document.querySelectorAll('.v27-brand-version')) e.textContent = 'v37.13';
+};
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', v37VersionUI, {once:true});
+else v37VersionUI();
+</script>
+<script id="v3714-beginner-mentor-only">
+/* v37.14 — ONLY beginner mentor education + first/second senior hints.
+   Intermediate/expert result descriptions, hint rules, game logic, scoring,
+   investigations, tutorial, diagnosis pools and sprites remain unchanged. */
+const v3714PreviousSeniorHtml = v37SeniorResultHtml;
+
+// Plain-language explanations are generated from the actual READY result.
+// They do not inspect the hidden diagnosis to manufacture a test finding.
+function v3714LabInterpretation(row, testName) {
+ const label=String(row.label||''), key=label.toLowerCase();
+ const flag=String(row.flag||'');
+ if(!isAbnormalValue(row))return null;
+ const high=/높음|상승/.test(flag), low=/낮음|감소/.test(flag);
+ let explanation='정상 참고범위에서 벗어난 수치야. 환자의 증상과 다른 검사도 함께 확인하자.';
+ if(/troponin|트로포닌/.test(key)) explanation='트로포닌은 심장 근육이 손상되면 혈액에서 증가해. 심근경색 외 원인도 있으니 가슴 통증과 ECG를 함께 보자. ECG에 ST분절 상승이 있다면 트로포닌을 기다리느라 긴급 치료를 늦추면 안 돼.';
+ else if(/백혈구|wcc|wbc|neutro|호중구/.test(key)) explanation=high?'감염이나 염증이 있을 때 증가할 수 있는 면역세포야. 세균 감염 가능성을 생각할 수 있지만 스트레스 등으로도 높아져. 체온, CRP, 관련 부위의 진찰·영상 소견을 비교해 봐.':'백혈구가 낮으면 감염에 대응하는 능력이 떨어질 수 있어. 다른 혈구 수치와 환자의 전신 상태를 함께 확인해 봐.';
+ else if(/crp|c-반응|염증 수치/.test(key)) explanation='CRP는 몸의 염증 반응을 보여주는 수치야. 높으면 감염·염증의 단서지만 세균성 감염을 확진하지는 않아. 백혈구, 발열, 신체진찰과 영상검사를 함께 보자.';
+ else if(/헤모글로빈|\bhb\b|haemoglobin/.test(key)) explanation=low?'산소를 운반하는 헤모글로빈이 낮아. 빈혈이나 출혈 가능성을 확인하고 어지러움·호흡곤란·출혈 증상을 함께 살펴봐.':'헤모글로빈이 높다면 탈수 같은 요인도 고려해 봐.';
+ else if(/platelet|혈소판/.test(key)) explanation=low?'혈소판이 낮으면 출혈 위험에 영향을 줄 수 있어. 멍·출혈 여부와 다른 혈액검사를 확인하자.':'혈소판이 높으면 염증을 포함한 여러 원인이 가능해. 수치 하나로 질환을 단정하지 말자.';
+ else if(/나트륨|\bna\b|na⁺/.test(key)) explanation='나트륨은 체내 수분 균형에 중요한 전해질이야. 높거나 낮으면 탈수·수분 문제 등을 평가하고 의식 변화가 있는지도 확인해 봐.';
+ else if(/칼륨|\bk\b|k⁺/.test(key)) explanation='칼륨은 심장 박동과 근육 기능에 중요한 전해질이야. 비정상이면 ECG와 신장기능, 복용약을 함께 살펴봐. 심한 이상은 긴급 처치가 필요할 수 있어.';
+ else if(/creatinine|크레아티닌|\burea\b|요소|egfr/.test(key)) explanation='신장기능과 관련된 수치야. 탈수나 신장기능 저하 여부를 생각하고 수액 상태·소변량·이전 검사 결과를 비교해 봐.';
+ else if(/혈당|glucose|bgl|hba1c/.test(key)) explanation=high?'혈당이 높아. 목마름·다뇨 등의 증상을 확인하고 케톤 및 산증이 있는지 살펴봐.':'혈당이 낮으면 식은땀·혼란·의식 변화가 생길 수 있어. 빠른 포도당 보충이 필요한지 평가해.';
+ else if(/ketone|케톤/.test(key)) explanation='케톤은 몸이 지방을 에너지로 사용하는 과정에서 생겨. 혈당도 높다면 산증 동반 여부를 VBG로 확인할 수 있어. VBG는 신속검사에서 별도로 주문해.';
+ else if(/inr|aptt|pt\b|응고/.test(key)) explanation='혈액이 굳는 과정에 관련된 수치야. 출혈 위험, 항응고제 복용 여부, 출혈 증상을 함께 확인하자.';
+ else if(/\balt\b|\balp\b|bilirubin|빌리루빈|ast\b/.test(key)) explanation='간이나 담도에 문제가 있을 때 달라질 수 있어. 복통 부위, 황달, 약물 복용 여부 및 복부 검사 결과를 함께 봐.';
+ else if(/\bph\b|hco|bicarbonate|base excess|anion gap|pco₂/.test(key)) explanation='몸의 산성·염기성 균형 또는 호흡 상태와 관련돼. 혈당, 케톤, 호흡수, 다른 전해질을 함께 보고 산증·알칼리증 여부를 판단해 봐.';
+ else if(/lactate|젖산/.test(key)) explanation='젖산은 조직에 산소 공급이 부족하거나 심한 감염·스트레스 등이 있을 때 상승할 수 있어. 혈압, 맥박, 체온, 감염 징후를 함께 살펴봐.';
+ else if(/lipase|리파아제/.test(key)) explanation='췌장에 염증이 있을 때 증가할 수 있어. 명치 통증과 구토, 다른 검사 소견을 함께 확인해 봐.';
+ else if(/d-dimer|디다이머/.test(key)) explanation='혈전이 생기고 분해될 때 올라갈 수 있지만 다른 이유로도 상승해. 증상과 혈전 위험도에 따라 초음파나 CTPA가 필요한지 판단해 봐.';
+ else if(/bnp/.test(key)) explanation='심장에 부담이 커지면 증가할 수 있는 수치야. 숨참·다리 부종·흉부 X-ray 등의 소견과 함께 심부전을 평가해 봐.';
+ else if(/소변|nitrite|leukoc|백혈구 \/ 아질산염/.test(key)) explanation='소변에서 감염의 단서가 보일 수 있어. 배뇨통·빈뇨·발열과 함께 판단하고, 배양 결과는 균 확인에 도움이 돼.';
+ else if(/spo₂|po₂|산소포화/.test(key)) explanation='산소 공급과 관련된 수치야. 정맥혈가스의 산소분압은 동맥 산소화 판단에 그대로 쓰지 않아. 실제 SpO₂와 호흡 상태를 함께 확인해.';
+ return `${label}: ${row.text||flag} — ${explanation}`;
+}
+function v3714NarrateTest(p,t) {
+ const raw=t.r;
+ if(Array.isArray(raw)) {
+  const abnormal=raw.map(row=>v3714LabInterpretation(row,t.n)).filter(Boolean);
+  if(abnormal.length)return abnormal;
+  const known={
+    FBE:'백혈구·헤모글로빈·혈소판을 보는 검사야. 이번 결과에는 뚜렷한 이상이 없어. 정상 혈액검사만으로 모든 감염을 배제할 수 있는 것은 아니야.',
+    UEC:'나트륨·칼륨과 신장기능을 확인하는 검사야. 현재 뚜렷한 이상 소견은 없어. 수분 상태와 소변량도 살펴봐.',
+    LFT:'간과 담도 관련 수치가 이번 검사에서 크게 벗어나지 않았어. 복통이 있다면 통증 부위와 진찰 결과도 중요해.',
+    CRP:'CRP는 염증 반응의 단서야. 이번 결과에서는 뚜렷한 상승이 없어도 증상과 진찰을 함께 해석해야 해.',
+    Coagulation:'출혈과 혈액응고를 살펴보는 기본 검사야. 현재 큰 이상이 없어.',
+    Troponin:'트로포닌은 심장 근육 손상을 확인하는 혈액검사야. 이번 수치는 참고범위 안이지만 증상 발생 시간과 ECG를 함께 평가해야 해.',
+    BGL:'혈당을 확인했어. 현재 정상범위라고 해도 증상과 병력을 함께 살펴봐.',
+    Ketones:'케톤 수치가 뚜렷하게 올라 있지 않아. 높은 혈당이 있다면 임상상태와 함께 보자.'
+  };
+  return [`${labelTest(t.n)} — ${known[t.n]||'이번 검사에서는 뚜렷한 이상 수치가 없어. 정상 소견도 다른 단서와 함께 해석하자.'}`];
+ }
+ const text=String(raw??'검사 결과 확인').trim();
+ let exp='이 검사 결과가 환자의 증상과 연결되는지 확인해 보자.';
+ if(t.n==='ECG')exp=/ST분절 상승|ST elevation/i.test(text)?'ECG에 ST분절 상승이 보이면 심근경색(STEMI)을 강하게 의심해야 해. 심근경색은 시간에 민감하므로 트로포닌 결과를 기다리며 응급 진료를 지연해서는 안 돼.': 'ECG는 심장 박동과 허혈성 변화를 보여줘. 흉통이 있다면 트로포닌과 증상도 함께 확인해야 해.';
+ else if(t.n==='Chest X-ray')exp=/폐침윤|consolidation|infiltrate/i.test(text)?'폐의 일부에 염증성 변화가 보일 수 있다는 뜻이야. 기침·발열·청진 이상·CRP/WCC를 함께 살펴보면 폐렴 판단에 도움이 돼.':'흉부 X-ray의 뚜렷한 이상이 없더라도 호흡기 증상과 산소포화도는 따로 평가해야 해.';
+ else if(t.n==='Respiratory Swab')exp='독감·코로나19 등 호흡기 바이러스 감염의 단서야. 음성이라도 모든 바이러스성 질환을 완전히 배제하지는 못해.';
+ else if(/Urine MCS|Urinalysis/.test(t.n))exp='소변 감염 여부를 보는 검사야. 배뇨통·빈뇨·발열과 함께 확인해. 배양의 최종 확정은 더 오래 걸릴 수 있어.';
+ else if(t.n==='BGL')exp='혈당을 확인한 결과야. 낮으면 저혈당 증상과 응급 처치를, 높으면 케톤·탈수 여부를 확인해 봐.';
+ else if(t.n==='Ketones')exp='케톤은 지방 분해 과정에서 생겨. 특히 높은 혈당과 함께 증가하면 산증 여부를 따로 확인해.';
+ else if(t.n.includes('X-ray')||t.n.startsWith('CT')||t.n.startsWith('MRI')||t.n.startsWith('USS'))exp='영상 결과가 통증이나 이상이 의심되는 위치와 일치하는지 보자. 정상 소견도 모든 질환을 완전히 배제하지는 않아.';
+ return [`${labelTest(t.n)}: ${text.slice(0,220)} — ${exp}`];
+}
+v37SeniorResultHtml=function(p){
+ if(v22Difficulty()!=='beginner')return v3714PreviousSeniorHtml(p);
+ const ready=(p.tests||[]).filter(t=>t.ready);
+ if(!ready.length)return '';
+ const notes=ready.flatMap(t=>v3714NarrateTest(p,t));
+ const main=notes.slice(0,6), rest=notes.slice(6);
+ return `<div class="v37-senior-results"><div class="v37-senior-top">${v37MentorAvatar()}<div><b>👩‍⚕️ 선임 의사의 쉬운 검사 결과 설명</b><small>무슨 수치인지 · 왜 중요한지 · 다음에는 무엇을 볼지</small></div></div><p>“검사 수치 하나만 보고 병을 확정하면 안 돼. 결과와 환자의 증상을 연결해서 생각해 보자.”</p><ul>${main.map(n=>`<li>${v10Esc(n)}</li>`).join('')}</ul>${rest.length?`<details><summary>다른 검사 결과 해설 ${rest.length}개 더 보기</summary><ul>${rest.map(n=>`<li>${v10Esc(n)}</li>`).join('')}</ul></details>`:''}<p>🤝 단서를 종합해 보고 싶으면 기존 <b>상급자 힌트 요청</b>을 눌러 봐. 첫 요청은 진단과 근거, 두 번째는 치료와 의뢰 방향을 설명해 줄게. (기존 점수 페널티 적용)</p></div>`;
+};
+
+const V3714_BEGINNER_CLUES={
+ Hypertension:['높은 혈압이 반복되는지, 두통·흉통·호흡곤란 등 장기손상 증상이 없는지 확인해야 해.','혈압 상승이 확인되더라도 숫자만으로 고혈압성 응급상황을 확정하지는 않아. 증상, ECG, 신장기능, 복약 상태를 종합해 고혈압을 평가해 봐.','장기손상이 없는 단순 고혈압이라면 급격하게 혈압을 낮추기보다는 복약 확인과 적절한 혈압 관리·재평가를 고려해.','안정적이라면 GP 추적 관찰 또는 필요 시 일반내과에 연결해. 장기손상 소견이 있으면 응급 평가가 우선이야.'],
+ Pneumonia:['기침·발열에 폐 청진 이상, WCC/CRP 상승, 흉부 X-ray 폐침윤이 있는지 살펴보자.','기침과 열에 염증 수치 상승, 흉부 X-ray 국소 폐침윤이 함께 확인되면 폐렴 가능성이 높아져. 이 중 일부만 있다면 다른 호흡기 질환도 생각해 봐.','세균성 폐렴이 의심되면 게임의 항생제 처치를 고려하고, 발열·통증과 저산소증도 필요에 따라 완화하자.','중증도와 산소포화도를 판단해 호흡기내과 또는 일반내과 의뢰, 안정적이라면 적절한 외래 진료를 고려해.'],
+ URTI:['콧물·인후통·기침 등 상기도 증상을 확인하고 호흡곤란이나 폐 침윤 같은 위험 신호가 없는지 보자.','콧물과 인후통 중심의 증상이며 중증 폐 소견이 없다면 상기도 바이러스 감염을 고려할 수 있어. 호흡기 스왑 결과가 도움이 될 수 있어.','대부분 증상 완화와 수분 섭취가 우선이야. 세균 감염이 확인되지 않은 일반적인 바이러스 감염에 항생제를 자동으로 쓰지는 않아.','안정적이라면 GP 추적 또는 적절한 퇴원 안내를 고려하고, 악화 징후는 재평가해야 해.'],
+ Gastroenteritis:['구토·설사와 탈수 징후를 확인하고, 심한 국소 복통이나 출혈 같은 위험 신호도 살펴보자.','구토·설사가 주증상이고 다른 급성 복부 질환의 위험 신호가 없다면 위장관염을 고려할 수 있어. 전해질과 수분 상태가 치료에 중요해.','수분 보충과 필요 시 항구토제, 통증 완화를 고려하고, 탈수 정도에 따라 경구 또는 IV 수액을 판단해.','수분 섭취가 가능하고 안정적이면 GP 추적·퇴원을, 탈수가 심하거나 위험 신호가 있으면 내과 평가를 고려해.'],
+ Appendicitis:['우하복부 통증과 압통, 발열, WCC·CRP 상승, 복부 영상 소견을 살펴보자.','국소적인 우하복부 통증·압통에 염증 소견이 동반되면 충수염을 의심할 수 있어. 영상과 외과적 평가로 확인해야 해.','진통제와 필요 시 수액, 금식 상태 검토가 중요해. 외과적 평가 없이 단순 복통으로 퇴원시키지 말자.','일반외과에 의뢰해 수술 또는 입원 필요성을 판단해.'],
+ Migraine:['두통 양상, 이전에 비슷한 발작이 있었는지, 신경학적 이상이나 갑작스러운 최고 강도 두통이 없는지 확인해.','반복적이고 전형적인 편두통 양상에 위험 신경학적 징후가 없다면 편두통이 가능해. 위험 신호가 있으면 다른 응급질환을 먼저 배제해야 해.','적절한 진통제와 필요 시 항구토제, 수분 공급 및 휴식을 고려해.','증상이 호전되고 위험 신호가 없으면 GP 추적을, 비전형적이거나 신경학적 이상이 있으면 신경과 평가를 고려해.'],
+ UTI:['배뇨통·빈뇨와 Urine MCS 결과를 함께 보고, 발열·옆구리 통증이 있는지도 확인해.','배뇨 증상과 소변 감염 소견이 함께 있으면 요로감염 가능성이 높아져. 열이나 옆구리 통증이 크면 상부 요로감염도 생각해 봐.','증상과 검사 결과에 맞는 항생제 및 필요 시 통증 완화를 고려해.','단순 감염으로 안정적이면 GP 추적이 가능하지만, 전신 증상·합병증 위험이 있으면 내과 평가가 필요해.'],
+ 'Renal Colic':['갑작스러운 옆구리 통증, 혈뇨 가능성, CT KUB 등 결석을 확인할 검사를 살펴봐.','옆구리에서 사타구니로 퍼지는 통증과 관련 영상 소견이 맞으면 요로결석을 의심할 수 있어. 발열이나 감염이 동반되면 더 긴급해.','통증 조절과 수분 상태 평가를 우선하고, 감염·폐색 동반 여부를 꼭 확인해.','합병증이나 지속적 통증이 있으면 비뇨의학과에 의뢰하고, 안정적인 경우 추적 계획을 세워.'],
+ Hyperglycaemia:['혈당 수치, 다뇨·갈증, 탈수 정도를 평가하고 케톤·산증 여부를 분리해서 확인해.','높은 혈당과 관련 증상이 있으면 고혈당을 평가해야 해. 케톤·산증이 없다면 DKA와는 구분할 수 있어.','수분 상태를 평가하고 게임의 당뇨 치료·복약 점검을 고려해. DKA나 의식 변화가 있으면 별도 응급 치료가 필요해.','안정적이면 GP 또는 내분비내과 추적, 심하거나 합병증이 있으면 일반내과 평가를 고려해.'],
+ Cellulitis:['붉고 열감 있는 피부 부위의 범위, 통증, 전신 발열과 상처 유무를 확인해.','국소 피부의 발적·열감·통증이 함께 있으면 봉와직염을 생각해 볼 수 있어. 고열이나 저혈압이 있으면 전신 감염을 평가해.','세균성 연조직 감염이 의심되면 적절한 항생제와 통증 조절을 고려하고, 병변이 퍼지는지 관찰해.','중증도에 따라 일반내과·외래 관리 여부를 판단해.'],
+ Fracture:['다친 기전, 통증 부위, 변형·부종, 말초 맥박·감각·운동 기능과 X-ray를 확인해.','외상 뒤 국소 통증과 X-ray상 골절 소견이 일치하면 골절을 의심할 수 있어. 피부 손상이나 신경혈관 이상도 놓치지 마.','통증 조절과 적절한 부목·고정을 고려해. 혈류·감각이 이상하면 응급 처치가 우선이야.','정형외과에 의뢰하거나 골절 형태에 맞는 안전한 추적 계획을 세워.'],
+ Constipation:['배변 간격, 복부 불편감, 구토·복부 팽만 및 가스 배출 여부를 확인하자.','배변이 줄고 복부 불편감이 있지만 장폐색 위험 신호가 없다면 변비를 고려할 수 있어. 심한 구토·팽만은 별도로 평가해.','장폐색이 의심되지 않는다면 수분·식이·완하제 등 증상 완화를 고려해.','안정적이면 GP 추적 또는 퇴원 교육을 고려해.'],
+ STEMI:['흉통 양상과 ECG의 ST분절 상승, Troponin 상승 여부를 확인해. ECG가 강하게 의심되면 트로포닌 결과를 기다리면 안 돼.','가슴 통증에 ECG ST분절 상승이 있으면 STEMI가 강하게 의심돼. Troponin 상승은 심장 근육 손상을 뒷받침할 수 있지만, 긴급 재관류는 Troponin을 기다려 결정하는 게 아니야.','금기가 없다면 Aspirin 등 항혈소판 치료 경로를 고려하고, 병원 ACS 프로토콜에 따른 긴급 재관류 평가가 필요해. 항혈소판제와 항응고제는 서로 다른 약이야.','심장내과·응급 PCI 팀에 즉시 연락하고 긴급 인계를 고려해.'],
+ Epistaxis:['코피가 나는 위치와 양, 지속시간, 출혈·응고 위험 및 혈압을 살펴보자.','코에서 출혈이 확인되고 다른 출혈 원인이 뚜렷하지 않다면 비출혈로 판단할 수 있어. 지속 출혈이나 혈역학적 불안정은 중요해.','코 앞쪽을 지속적으로 압박하고 상태를 관찰하며, 게임에 준비된 비출혈 지혈 처치를 고려해.','조절되지 않는 출혈이나 반복 출혈은 이비인후과 평가가 필요해. 안정적이라면 추적 안내를 해.'],
+ Asthma:['천명음·숨참, 호흡수, SpO₂, 폐 청진 소견과 기관지확장제 반응을 확인해.','쌕쌕거림과 호흡곤란, 폐 청진의 천명음이 함께 있다면 천식 악화를 고려할 수 있어. 매우 조용한 가슴이나 의식 변화는 위험 신호야.','기관지확장제와 필요 시 스테로이드, 산소포화도에 따른 산소치료를 고려하고 반응을 재평가하자.','중증이면 응급실 상급자·호흡기내과에 의뢰하고, 안정적이면 적절한 추적 진료와 악화 시 대처 교육을 고려해.']
+};
+function v3714VisibleEvidence(p){
+ const ready=(p.tests||[]).filter(t=>t.ready), evid=[];
+ const complaint=diseases.find(d=>d[0]===p.d)?.[2];
+ if(complaint)evid.push('주호소: '+co(complaint));
+ if(Number(p.temp)>=38)evid.push('발열 '+Number(p.temp).toFixed(1)+'°C');
+ if(Number(p.spo2)<94)evid.push('SpO₂ '+p.spo2+'%');
+ if(Number(p.sbp)<90)evid.push('낮은 수축기 혈압 '+p.sbp);
+ if(Number(p.sbp)>=160)evid.push('높은 수축기 혈압 '+p.sbp);
+ if(Number(p.bgl)<4||Number(p.bgl)>11.1){if(ready.some(t=>t.n==='BGL'||t.n==='BGL & Ketones'))evid.push('혈당 '+p.bgl+' mmol/L');}
+ const abnormal=ready.flatMap(t=>Array.isArray(t.r)?t.r.filter(isAbnormalValue).map(r=>r.label+' '+r.text):[]).slice(0,3);
+ evid.push(...abnormal);
+ const others=ready.filter(t=>typeof t.r==='string'&&!/특이 소견 없음|정상|참고범위 이내|급성 이상 소견 뚜렷하지 않음/.test(t.r)).slice(0,2).map(t=>t.n+': '+String(t.r).slice(0,90));
+ evid.push(...others);
+ if((p.exams||[]).length)evid.push('시행한 신체검사 '+p.exams.slice(0,2).join('·'));
+ return {ready, items:evid.slice(0,6),hasWork:ready.length>0||(p.exams||[]).length>0||(p.asked||[]).length>0};
+}
+function v3714EvidenceSufficient(p,evidence){
+ const ready=evidence.ready||[], taken=n=>ready.some(t=>t.n===n);
+ const finding=(n,re)=>ready.some(t=>t.n===n&&re.test(typeof t.r==='string'?t.r:JSON.stringify(t.r)));
+ const exams=(p.exams||[]).length, history=(p.asked||[]).length;
+ if(p.d==='STEMI')return finding('ECG',/ST분절 상승|ST elevation/i);
+ if(p.d==='Pneumonia')return finding('Chest X-ray',/폐침윤|폐경결|consolidation|infiltrate/i)||(taken('FBE')&&taken('CRP')&&exams>0);
+ if(p.d==='Hyperglycaemia')return taken('BGL')||taken('BGL & Ketones');
+ if(p.d==='UTI')return taken('Urine MCS')||taken('Urinalysis')||(history>=2&&exams>0);
+ if(p.d==='Hypertension')return Number(p.sbp)>=160&&(history>0||exams>0||taken('UEC')||taken('ECG'));
+ if(p.d==='Fracture')return finding('Limb X-ray',/골절|fracture/i)||(exams>0&&history>=2);
+ if(p.d==='Epistaxis')return history>0||exams>0;
+ if(p.d==='URTI'||p.d==='Migraine'||p.d==='Constipation'||p.d==='Asthma'||p.d==='Cellulitis')return (exams>0&&history>=1)||(history>=3);
+ return ready.length>=2||(ready.length>=1&&exams>=1)||(exams>=1&&history>=2);
+}
+const v3714OriginalConsultSenior=consultSenior;
+consultSenior=function(){
+ if(v22Difficulty()!=='beginner'||rank()>=8)return v3714OriginalConsultSenior();
+ const p=cur();if(!p)return;
+ const data=V3714_BEGINNER_CLUES[p.d];
+ if(!data)return v3714OriginalConsultSenior();
+ // Preserve original per-hint score and repetition reputation penalties.
+ p.hints=(p.hints||0)+1;
+ if(p.hints>=3)s.rep-=2;
+ if(p.hints>=5)s.rep-=4;
+ p.v3714MentorHintCount=(p.v3714MentorHintCount||0)+1;
+ const stage=p.v3714MentorHintCount===1?2:3;
+ const evidence=v3714VisibleEvidence(p);
+ let explanation='';
+ if(stage===2){
+  if(!evidence.hasWork)explanation=`지금은 주호소만 알아서 확진하기 어려워. ${data[0]} 실제로 확인한 단서가 쌓이면 함께 진단을 좁혀 보자.`;
+  else if(!v3714EvidenceSufficient(p,evidence))explanation=`지금까지 확인한 단서는 ${evidence.items.join(' / ')}야. 하지만 아직 진단을 뒷받침할 자료가 더 필요해. ${data[0]}`;
+  else explanation=`지금까지 확인한 단서를 연결해 보자. ${evidence.items.map(x=>String(x).replace(/[.。]\s*$/,'')).join(' / ')}. ${data[1]} 검사 한 가지만으로 확진하지 말고 서로 맞는지 확인하자.`;
+ }else{
+  explanation=`이제 치료와 의뢰 방향도 함께 살펴보자. ${data[2]} ${data[3]} 실제 처치 전에는 진단 근거, 환자 상태와 금기 여부를 다시 확인하자.`;
+ }
+ show(`<h2>🩺 상급자 힌트 · ${stage===2?'① 진단 단서 종합':'② 처치·전문과 의뢰'}</h2><div class="v37-senior-top">${v37MentorAvatar()}<div><b>👩‍⚕️ 선임 의사</b><small>${stage===2?'현재 확인한 자료를 함께 판단해 보자':'치료와 의뢰를 결정해 보자'}</small></div></div><p class="hintbox">${v10Esc(explanation)}</p><p class="muted">이번 힌트로 최종 점수 −8점. 누적 ${p.hints}회${p.hints>=3?' · 반복 이용으로 평판 하락':''}.</p><button class="primary" onclick="hide()">진료 계속</button>`);
+ render();
+};
+const v3714PriorVersionUI=v37VersionUI;
+v37VersionUI=function(){
+ v3714PriorVersionUI();
+ const heading=document.querySelector('#v22Setup h1');
+ if(heading)heading.textContent='🏥 ED Simulator v37.14';
+ const tag=document.getElementById('v27VersionTag');
+ if(tag)tag.textContent='v37.14 · 초심자 단계별 선임 의사 해설';
+ document.title='Emergency Doctor Simulator · v37.14 (한국어)';
+ for(const el of document.querySelectorAll('.v27-brand-version'))el.textContent='v37.14';
+};
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',v37VersionUI,{once:true});
+else v37VersionUI();
+</script>
 </body></html>
